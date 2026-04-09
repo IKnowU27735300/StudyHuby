@@ -57,9 +57,6 @@ export default function LandingPage() {
           >
             Start Exploring
           </Link>
-          <button className="h-14 px-10 rounded-2xl bg-white/5 text-white font-bold inline-flex items-center justify-center gap-2 border border-white/10 hover:bg-white/10 transition-all">
-            Contribution Guide
-          </button>
         </div>
 
         {/* Feature Preview Cards */}
@@ -77,6 +74,30 @@ export default function LandingPage() {
               <p className="text-muted-foreground text-sm leading-relaxed">{feature.desc}</p>
             </div>
           ))}
+        </div>
+
+        {/* Contributors Section */}
+        <div className="mt-12 mb-24 flex flex-col items-center gap-6 animate-fade-in-up">
+          <div className="flex -space-x-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-12 w-12 rounded-full border-4 border-slate-950 bg-slate-900 flex items-center justify-center overflow-hidden transition-transform hover:-translate-y-2 cursor-pointer">
+                <img
+                   src={`https://i.pravatar.cc/150?u=${i + 20}`}
+                  alt={`Contributor ${i}`}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            ))}
+            <div className="h-12 w-12 rounded-full border-4 border-slate-950 bg-primary flex items-center justify-center text-xs font-black text-white shadow-xl shadow-primary/20">
+              +120
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-lg font-bold text-white mb-1">Join the Elite Community</p>
+            <p className="text-sm text-muted-foreground max-w-sm">
+              You are among <span className="text-primary font-bold">500+ active students</span> sharing and growing together on StudyHub.
+            </p>
+          </div>
         </div>
       </main>
 
