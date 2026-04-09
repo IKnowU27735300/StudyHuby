@@ -1,7 +1,23 @@
+'use client';
+
 import { LayoutDashboard, BookOpen, Share2, ShieldCheck, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 
 export default function LandingPage() {
+  const { user, loginWithGoogle, loading } = useAuth();
+  const router = useRouter();
+
+  const handleStartExploring = async () => {
+    if (user) {
+      router.push('/dashboard');
+    } else {
+      await loginWithGoogle();
+      router.push('/dashboard');
+    }
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 flex flex-col items-center">
       {/* Animated Background Gradients */}
@@ -22,13 +38,14 @@ export default function LandingPage() {
             <Link href="#community" className="hover:text-white transition-colors">Community</Link>
             <Link href="#about" className="hover:text-white transition-colors">About</Link>
           </div>
-          <Link 
-            href="/dashboard" 
-            className="group relative inline-flex items-center gap-2 overflow-hidden rounded-2xl bg-white px-8 py-3.5 text-sm font-bold text-slate-950 transition-all hover:scale-105 active:scale-95 shadow-xl shadow-white/10"
+          <button 
+            onClick={handleStartExploring}
+            disabled={loading}
+            className="group relative inline-flex items-center gap-2 overflow-hidden rounded-2xl bg-white px-8 py-3.5 text-sm font-bold text-slate-950 transition-all hover:scale-105 active:scale-95 shadow-xl shadow-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Get Started
+            {loading ? 'Entering...' : 'Get Started'}
             <Sparkles className="h-4 w-4" />
-          </Link>
+          </button>
         </div>
       </nav>
 
@@ -51,12 +68,13 @@ export default function LandingPage() {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center gap-6">
-          <Link 
-            href="/dashboard" 
-            className="h-14 px-10 rounded-2xl bg-primary text-white font-bold inline-flex items-center justify-center gap-2 shadow-2xl shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
+          <button 
+            onClick={handleStartExploring}
+            disabled={loading}
+            className="h-14 px-10 rounded-2xl bg-primary text-white font-bold inline-flex items-center justify-center gap-2 shadow-2xl shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Start Exploring
-          </Link>
+            {loading ? 'Please wait...' : 'Start Exploring'}
+          </button>
         </div>
 
         {/* Feature Preview Cards */}
