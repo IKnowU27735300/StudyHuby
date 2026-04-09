@@ -1,36 +1,140 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🎓 StudyHub: The Ultimate Academic Resource Vault
 
-## Getting Started
+[![Vercel Deployment](https://img.shields.io/badge/Deployed-Vercel-black?style=for-the-badge&logo=vercel)](https://studyhuby.vercel.app)
+[![Next.js](https://img.shields.io/badge/Built%20With-Next.js%2015-000000?style=for-the-badge&logo=next.js)](https://nextjs.org)
+[![Firebase](https://img.shields.io/badge/State-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=white)](https://firebase.google.com)
+[![Prisma](https://img.shields.io/badge/ORM-Prisma%207-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://prisma.io)
 
-First, run the development server:
+StudyHub is a premium, state-of-the-art academic platform designed to streamline the sharing and discovery of educational resources. Built with a sleek black-and-gold aesthetic, it offers a seamless experience for students and researchers to manage notes, papers, and exam materials.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## 🌟 Key Features
+
+### 📁 Resource Management
+- **Study Materials**: Share and discover notes, manuals, and documents (PDF, PNG, JPG).
+- **Question Papers**: Access previous year exams categorized by **Regular**, **Makeup**, and **Reexam**.
+- **Research Papers**: A dedicated vault for academic publications with abstract previews.
+- **Model Papers**: Practice with curated model question sets without difficulty distractions.
+
+### 🌓 Premium Experience
+- **Adaptive Theme**: Seamless toggle between sleek **Dark Mode** (Black & Gold) and crisp **Light Mode**.
+- **Collapsible Sidebar**: A flexible navigation system that collapses to icon-only mode for maximum focus.
+- **Glassmorphism UI**: Modern, translucent design elements that feel extremely premium.
+
+### 👤 Social & Engagement
+- **Follower System**: Follow your peers and build a network of academic contributors.
+- **Login Streaks**: Keep your study momentum alive with a gamified streak system and visual heatmaps.
+- **Contribution Vault**: Easily manage your own uploads in a personalized storage section.
+
+---
+
+## 🏗️ Architecture & Flow
+
+### System Block Diagram
+
+```mermaid
+graph TD
+    A[Client - Next.js 15 App] --> B[Authentication - Firebase Auth]
+    B --> C[Authorized Access]
+    C --> D[Resource Upload - Firebase Storage]
+    C --> E[Real-time Metadata - Firestore]
+    C --> F[User/Social Data - Prisma + PostgreSQL]
+    
+    subgraph "Frontend Layer"
+        G[Dashboard Layout]
+        H[Sidebar Navigation]
+        I[TopBar & Profile]
+    end
+    
+    subgraph "State Management"
+        J[AuthContext]
+        K[SidebarContext]
+        L[ThemeContext]
+    end
+    
+    A --- G
+    G --- H
+    H --- K
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Data Flow for Resource Upload
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```mermaid
+sequenceDiagram
+    participant User
+    participant App as StudyHub App
+    participant Storage as Firebase Storage
+    participant DB as Firestore / PostgreSQL
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+    User->>App: Select File (PDF/PNG/JPG)
+    App->>App: Validate Format
+    App->>Storage: Upload Encrypted Blob
+    Storage-->>App: Return Download URL
+    App->>DB: Store Metadata (URL, Subject, Type)
+    DB-->>App: Sync Confirmed
+    App->>User: Display Success Toast
+```
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 🛠️ Tech Stack
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Core**: [Next.js 15+](https://nextjs.org) (App Router), [React 19](https://react.dev)
+- **Styling**: [Tailwind CSS 4](https://tailwindcss.com), [Lucide React Icons](https://lucide.dev)
+- **Database/ORM**: [Prisma 7](https://prisma.io), [PostgreSQL](https://postgresql.org)
+- **State/Real-time**: [Google Firebase](https://firebase.google.com) (Auth, Firestore, Storage)
+- **Persistence**: [Vercel](https://vercel.com)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 🚀 Getting Started
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Prerequisites
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Node.js 18+](https://nodejs.org)
+- [Firebase Account & Config](https://console.firebase.google.com)
+- [PostgreSQL Database](https://www.postgresql.org/) (Check `.env.example`)
+
+### Installation
+
+1.  **Clone the Repository**:
+    ```bash
+    git clone https://github.com/username/studyhub.git
+    cd studyhub
+    ```
+
+2.  **Install Dependencies**:
+    ```bash
+    npm install
+    ```
+
+3.  **Setup Environment Variables**:
+    Create a `.env` file in the root directory:
+    ```bash
+    DATABASE_URL="your_postgresql_url"
+    NEXT_PUBLIC_FIREBASE_API_KEY="..."
+    # ... other firebase keys
+    ```
+
+4.  **Generate Prisma Client**:
+    ```bash
+    npx prisma generate
+    ```
+
+5.  **Run Development Server**:
+    ```bash
+    npm run dev
+    ```
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
+<p align="center">
+  Built with ❤️ by the StudyHub Team
+</p>
