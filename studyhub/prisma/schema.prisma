@@ -1,0 +1,126 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User & Auth
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String?
+  avatarUrl         String?
+  role              Role     @default(USER)
+
+  // Onboarding fields
+  college           String?
+  course            String?
+  semester          Int?
+  academicYear      String?
+  registrationNo    String? @unique
+
+  // Streak tracking
+  lastLoginAt       DateTime @default(now())
+  loginStreak       Int      @default(0)
+
+  // Relations
+  studyMaterials    StudyMaterial[]
+  researchPapers    ResearchPaper[]
+  questionPapers    QuestionPaper[]
+  modelPapers       ModelPaper[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+enum Role { 
+  USER 
+  ADMIN 
+}
+
+// Study Materials
+model StudyMaterial {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title         String
+  subject       String
+  subjectCode   String
+  year          Int
+  branch        String
+  college       String
+  description   String?
+  fileUrl       String   // S3 signed URL or public URL
+  fileSize      Int      // bytes
+  mimeType      String
+  tags          String[] // stored as array of strings
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Research Papers
+model ResearchPaper {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title         String
+  authors       String[]
+  abstract      String
+  publicationYear Int
+  journal       String?
+  doi           String?
+  fileUrl       String
+  tags          String[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Question Papers
+model QuestionPaper {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  subject       String
+  subjectCode   String
+  year          Int
+  semester      Int
+  branch        String
+  college       String
+  session       String?
+  fileUrl       String
+  tags          String[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Model Papers
+model ModelPaper {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  subject       String
+  subjectCode   String
+  year          Int
+  semester      Int
+  branch        String
+  college       String
+  session       String?
+  fileUrl       String
+  tags          String[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

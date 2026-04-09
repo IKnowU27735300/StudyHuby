@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fafafa;
+  --foreground: #111111;
+  --card: #ffffff;
+  --card-foreground: #111111;
+  --popover: #ffffff;
+  --popover-foreground: #111111;
+  --primary: #111111;
+  --primary-foreground: #ffffff;
+  --secondary: #ebebeb;
+  --secondary-foreground: #111111;
+  --muted: #f0f0f0;
+  --muted-foreground: #666666;
+  --accent: #111111;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #111111;
+  --radius: 1rem;
+}
+
+.dark {
+  --background: #000000;
+  --foreground: #fefcf2;
+  --card: #0a0a0a;
+  --card-foreground: #fefcf2;
+  --popover: #0a0a0a;
+  --popover-foreground: #fefcf2;
+  --primary: #d4af37;
+  --primary-foreground: #000000;
+  --secondary: #1a1a1a;
+  --secondary-foreground: #d4af37;
+  --muted: #171717;
+  --muted-foreground: #a3a3a3;
+  --accent: #d4af37;
+  --accent-foreground: #000000;
+  --destructive: #ef4444;
+  --destructive-foreground: #fefcf2;
+  --border: #262626;
+  --input: #262626;
+  --ring: #d4af37;
+  --radius: 1rem;
+}
+
+@theme {
+  --color-primary-600: #2563eb;
+  --color-primary-500: #3b82f6;
+  --color-primary-400: #60a5fa;
+  
+  --color-accent-blue: #3b82f6;
+  --color-accent-purple: #8b5cf6;
+  --color-accent-indigo: #6366f1;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', sans-serif;
+  transition: all 0.3s ease;
+}
+
+.glass {
+  background: var(--card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+}
+
+.dark .glass {
+  background: rgba(10, 10, 10, 0.7);
+  border: 1px solid rgba(212, 175, 55, 0.15); /* Faint gold border */
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #737373 0%, #000000 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.dark .gradient-text {
+  background: linear-gradient(135deg, #fde047 0%, #d4af37 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary-foreground);
+}
