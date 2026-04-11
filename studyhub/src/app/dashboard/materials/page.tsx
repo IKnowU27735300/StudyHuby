@@ -1,19 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Filter, Download, Calendar, Tag, User as UserIcon, BookOpen, Search, X, Loader2, Eye } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { db, storage } from '@/lib/firebase';
-import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { useCollection } from 'react-firebase-hooks/firestore';
 import { toast } from 'react-hot-toast';
+import { uploadMaterial, getMaterials, downloadMaterial } from '@/app/actions/materials';
 
 export default function MaterialsPage() {
   const { user } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [materials, setMaterials] = useState<any[]>([]);
+  const [fetching, setFetching] = useState(true);
   
   // Form State
   const [title, setTitle] = useState('');
@@ -24,17 +23,21 @@ export default function MaterialsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // Real-time listener for materials
-  const [snapshot, loading, error] = useCollection(
-    query(collection(db, 'materials'), orderBy('createdAt', 'desc'))
-  );
+  useEffect(() => {
+    fetchMaterials();
+  }, []);
 
-  const materials = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) || [];
-  const filteredMaterials = materials.filter(m => 
-    m.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    m.subject?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.code?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const fetchMaterials = async () => {
+    try {
+      const data = await getMaterials();
+      setMaterials(data);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load materials");
+    } finally {
+      setFetching(false);
+    }
+  };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,35 +47,47 @@ export default function MaterialsPage() {
     }
 
     setUploading(true);
-    const toastId = toast.loading('Uploading material...');
+    const toastId = toast.loading('Uploading material to MongoDB...');
 
     try {
-      const storageRef = ref(storage, `materials/${user.uid}/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const formData = new FormData();
+      formData.append('userId', user.uid);
+      formData.append('title', title);
+      formData.append('subject', subject);
+      formData.append('code', code.toUpperCase());
+      formData.append('year', year);
+      formData.append('tags', JSON.stringify(tags.split(',').map(t => t.trim()).filter(t => t)));
+      formData.append('file', file);
 
-      await addDoc(collection(db, 'materials'), {
-        title,
-        subject,
-        code: code.toUpperCase(),
-        year: parseInt(year),
-        tags: tags.split(',').map(t => t.trim()).filter(t => t),
-        url,
-        fileName: file.name,
-        size: file.size,
-        userId: user.uid,
-        uploader: user.displayName || 'Learner',
-        createdAt: serverTimestamp()
-      });
+      await uploadMaterial(formData);
 
-      toast.success('Document uploaded & synced to database!', { id: toastId });
+      toast.success('Document uploaded & synced successfully!', { id: toastId });
       setIsModalOpen(false);
       setTitle(''); setSubject(''); setCode(''); setYear(new Date().getFullYear().toString()); setTags(''); setFile(null);
+      fetchMaterials(); // Refresh list
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || 'Error uploading material', { id: toastId });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDownload = async (materialId: string, fileName: string) => {
+    const toastId = toast.loading('Downloading from MongoDB...');
+    try {
+      const result = await downloadMaterial(materialId);
+      const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success('Download started!', { id: toastId });
+    } catch (err) {
+      toast.error("Download failed", { id: toastId });
     }
   };
 
@@ -84,12 +99,18 @@ export default function MaterialsPage() {
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   };
 
+  const filteredMaterials = (materials || []).filter(m => 
+    m.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    m.subject?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.subjectCode?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div className="flex flex-col gap-8 relative">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold font-outfit text-foreground">Study Materials</h2>
-          <p className="text-muted-foreground mt-1">Discover notes and manuals shared seamlessly via database.</p>
+          <p className="text-muted-foreground mt-1">Discover resources stored in MongoDB & indexed in Firebase.</p>
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
@@ -119,7 +140,7 @@ export default function MaterialsPage() {
         </div>
       </div>
 
-      {loading ? (
+      {fetching ? (
         <div className="py-20 flex justify-center">
           <Loader2 className="h-10 w-10 text-primary animate-spin" />
         </div>
@@ -139,7 +160,7 @@ export default function MaterialsPage() {
                     <BookOpen className="h-6 w-6" />
                   </div>
                   <div className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground border border-border px-2 py-1 rounded">
-                    {material.code}
+                    {material.subjectCode}
                   </div>
                 </div>
                 
@@ -153,9 +174,9 @@ export default function MaterialsPage() {
                     <Calendar className="h-3.5 w-3.5" />
                     Year {material.year}
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-                    <UserIcon className="h-3.5 w-3.5" />
-                    By {material.uploader}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium text-primary">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Saved in MongoDB
                   </div>
                 </div>
 
@@ -171,18 +192,11 @@ export default function MaterialsPage() {
 
               <div className="p-4 bg-secondary/50 border-t border-border flex gap-2">
                 <button 
-                  onClick={() => window.open(material.url, '_blank')}
-                  className="flex-1 h-12 rounded-xl bg-background border border-border text-foreground text-sm font-bold flex items-center justify-center gap-2 hover:bg-muted transition-colors"
-                >
-                  <Eye className="h-4 w-4" />
-                  View
-                </button>
-                <button 
-                  onClick={() => window.open(material.url, '_blank')}
+                  onClick={() => handleDownload(material.id, material.title)}
                   className="flex-1 h-12 rounded-xl bg-primary text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors"
                 >
                   <Download className="h-4 w-4" />
-                  {material.size ? formatFileSize(material.size) : 'Download'}
+                  {material.fileSize ? formatFileSize(material.fileSize) : 'Download'}
                 </button>
               </div>
             </div>
@@ -233,8 +247,8 @@ export default function MaterialsPage() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Document File (PDF, PNG, JPG)</label>
-                <input required type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={e => setFile(e.target.files?.[0] || null)} className="w-full text-sm text-muted-foreground file:mr-4 file:py-3 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 bg-background border border-border rounded-xl p-1" />
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Document File (Max 15MB)</label>
+                <input required type="file" onChange={e => setFile(e.target.files?.[0] || null)} className="w-full text-sm text-muted-foreground file:mr-4 file:py-3 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 bg-background border border-border rounded-xl p-1" />
               </div>
 
               <button 
@@ -243,7 +257,7 @@ export default function MaterialsPage() {
                 className="mt-4 h-14 rounded-2xl bg-primary text-white font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
                 {uploading ? (
-                  <><Loader2 className="h-5 w-5 animate-spin" /> Publishing to Database...</>
+                  <><Loader2 className="h-5 w-5 animate-spin" /> Syncing to MongoDB...</>
                 ) : (
                   <><Plus className="h-5 w-5" /> Share Material</>
                 )}
@@ -255,3 +269,6 @@ export default function MaterialsPage() {
     </div>
   );
 }
+
+// Missing icon fix
+import { ShieldCheck } from 'lucide-react';
