@@ -5,6 +5,7 @@ import { Search, User as UserIcon, GraduationCap, Mail, Loader2, MapPin, Sparkle
 import { globalSearch, SearchCategory } from '@/app/actions/search';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
 
 const CATEGORIES: { label: string; value: SearchCategory; icon: any }[] = [
   { label: 'Study Materials', value: 'MATERIALS', icon: BookOpen },
@@ -29,7 +30,7 @@ export default function DiscoveryPage() {
   const handleSearch = async (query: string, cat: SearchCategory, uid?: string) => {
     setLoading(true);
     try {
-      const result = await globalSearch(query, cat, uid);
+      const result = await globalSearch(query, [cat], uid);
       if (result.success) {
         setResults(result.data || []);
       } else {
