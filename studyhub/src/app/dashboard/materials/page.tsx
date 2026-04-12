@@ -95,11 +95,20 @@ export default function MaterialsPage() {
         category: result.subject,
         mongodbId: result.id,
         userId: user.uid,
-        size: file.size, // Added size for indicator
+        size: file.size,
         createdAt: new Date(),
       });
 
-      // 3. Increment Firestore count
+      // 3. Create a Broadcast Alert for all users (Client handles this now)
+      await addDoc(collection(db, 'notifications'), {
+        userId: 'GLOBAL_ALERTS',
+        type: 'UPLOAD',
+        message: `New Document: "${result.title}" added by ${user.displayName || 'a user'}!`,
+        createdAt: new Date(),
+        resourceId: result.id
+      });
+
+      // 4. Increment Firestore count
       await setDoc(doc(db, 'users', user.uid), {
         contributionCount: increment(1)
       }, { merge: true });

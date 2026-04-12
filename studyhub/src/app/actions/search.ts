@@ -45,6 +45,16 @@ export async function globalSearch(query: string, categories: SearchCategory[], 
                 { subjectCode: { contains: query, mode: 'insensitive' } },
               ],
             },
+            select: {
+              id: true,
+              title: true,
+              subject: true,
+              subjectCode: true,
+              year: true,
+              mimeType: true,
+              fileSize: true,
+              createdAt: true,
+            },
             take: 10,
           });
           return materials.map(m => ({ ...m, _type: 'MATERIALS' }));
@@ -57,6 +67,15 @@ export async function globalSearch(query: string, categories: SearchCategory[], 
                 { abstract: { contains: query, mode: 'insensitive' } },
                 { journal: { contains: query, mode: 'insensitive' } },
               ],
+            },
+            select: {
+              id: true,
+              title: true,
+              abstract: true,
+              journal: true,
+              publicationYear: true,
+              doi: true,
+              createdAt: true,
             },
             take: 10,
           });
@@ -71,6 +90,14 @@ export async function globalSearch(query: string, categories: SearchCategory[], 
                 { college: { contains: query, mode: 'insensitive' } },
               ],
             },
+            select: {
+              id: true,
+              subject: true,
+              subjectCode: true,
+              college: true,
+              year: true,
+              createdAt: true,
+            },
             take: 10,
           });
           return questions.map(q => ({ ...q, _type: 'QUESTION_PAPERS' }));
@@ -83,6 +110,14 @@ export async function globalSearch(query: string, categories: SearchCategory[], 
                 { subjectCode: { contains: query, mode: 'insensitive' } },
                 { college: { contains: query, mode: 'insensitive' } },
               ],
+            },
+            select: {
+              id: true,
+              subject: true,
+              subjectCode: true,
+              college: true,
+              year: true,
+              createdAt: true,
             },
             take: 10,
           });
@@ -105,10 +140,22 @@ export async function globalSearch(query: string, categories: SearchCategory[], 
 
 export async function getUserContributions(userId: string) {
   try {
-    const materials = await prisma.studyMaterial.findMany({ where: { userId } });
-    const research = await prisma.researchPaper.findMany({ where: { userId } });
-    const questions = await prisma.questionPaper.findMany({ where: { userId } });
-    const models = await prisma.modelPaper.findMany({ where: { userId } });
+    const materials = await prisma.studyMaterial.findMany({ 
+      where: { userId }, 
+      select: { id: true, title: true, subject: true, subjectCode: true, year: true, createdAt: true, fileSize: true } 
+    });
+    const research = await prisma.researchPaper.findMany({ 
+      where: { userId }, 
+      select: { id: true, title: true, publicationYear: true, abstract: true, createdAt: true } 
+    });
+    const questions = await prisma.questionPaper.findMany({ 
+      where: { userId }, 
+      select: { id: true, subject: true, subjectCode: true, year: true, createdAt: true } 
+    });
+    const models = await prisma.modelPaper.findMany({ 
+      where: { userId }, 
+      select: { id: true, subject: true, subjectCode: true, year: true, createdAt: true } 
+    });
 
     return {
       success: true,

@@ -1,8 +1,6 @@
 'use server';
 
 import prisma from '@/lib/prisma';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 
 export async function uploadMaterial(formData: FormData) {
   const userId = formData.get('userId') as string;
@@ -48,24 +46,6 @@ export async function uploadMaterial(formData: FormData) {
       }
     });
 
-    // 2. Store just the name and category in Firebase Firestore
-    await addDoc(collection(db, 'material_index'), {
-      fileName: title,
-      category: subject,
-      mongodbId: mongoResult.id,
-      userId,
-      createdAt: new Date(),
-    });
-
-    // 3. Create a Discover Alert for all users
-    await addDoc(collection(db, 'notifications'), {
-      userId: 'GLOBAL_ALERTS', // Marker for broadcast
-      type: 'UPLOAD',
-      message: `New Document: "${title}" added in ${subject}!`,
-      createdAt: serverTimestamp(),
-      resourceId: mongoResult.id
-    });
-    
     // We removed Prisma contributionCount to restore database state.
     // Real-time tracking is handled on the client via Firestore material_index.
     return { success: true, id: mongoResult.id, title, subject };
@@ -99,15 +79,20 @@ export async function getMaterials() {
 
 export async function deleteMaterial(id: string, firebaseUid: string) {
   try {
-    const material = await prisma.studyMaterial.findUnique({
+    const material = await (prisma.studyMaterial.findUnique({
       where: { id },
-      include: { user: true }
-    });
+      select: {
+        id: true,
+        user: {
+          select: { firebaseUid: true }
+        } as any
+      }
+    }) as any);
 
     if (!material) throw new Error("Material not found");
     
     // Ownership check
-    if ((material.user as any).firebaseUid !== firebaseUid) {
+    if (material.user?.firebaseUid !== firebaseUid) {
       throw new Error("Unauthorized: You can only delete your own materials.");
     }
 
@@ -116,12 +101,7 @@ export async function deleteMaterial(id: string, firebaseUid: string) {
       where: { id }
     });
 
-    // 2. Find and delete from Firestore material_index
-    const indexQuery = query(collection(db, 'material_index'), where('mongodbId', '==', id));
-    const indexSnap = await getDocs(indexQuery);
-    
-    const deletePromises = indexSnap.docs.map(doc => deleteDoc(doc.ref));
-    await Promise.all(deletePromises);
+    return { success: true };
 
     // Prisma updates for contributionCount removed to restore state.
     return { success: true };
