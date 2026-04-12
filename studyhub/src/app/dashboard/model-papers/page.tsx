@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Award, Plus, Grid, List, Download, Star, Clock, Loader2, X, Eye } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { incrementContribution } from '@/app/actions/user';
 import { db, storage } from '@/lib/firebase';
 import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -56,6 +57,8 @@ export default function ModelPapersPage() {
         uploader: user.displayName || 'Learner',
         createdAt: serverTimestamp()
       });
+
+      await incrementContribution(user.uid);
 
       toast.success('Model paper uploaded successfully!', { id: toastId });
       setIsModalOpen(false);

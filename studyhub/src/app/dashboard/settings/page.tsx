@@ -1,24 +1,152 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from 'next-themes';
 import { db, storage } from '@/lib/firebase';
-import { doc, updateDoc, collection, query, where } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, deleteDoc, setDoc, increment, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { updateProfile } from 'firebase/auth';
 import { Monitor, Moon, Sun, Save, User, HardDrive, FileText, BookOpen, GraduationCap, Award, Trash2, Camera, Loader2, Users, UserPlus } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { getUsersByFirebaseUids, incrementContribution, decrementContribution } from '@/app/actions/user';
+import { deleteMaterial } from '@/app/actions/materials';
+import Link from 'next/link';
 
 export default function SettingsPage() {
   const { user, profile } = useAuth();
+  
+  // Storage Refresh trigger
+  const [storageRefresh, setStorageRefresh] = useState(0);
+
+  const handleDeleteMaterial = async (mongodbId: string, title: string) => {
+    if (!user) return;
+    if (!window.confirm(`Are you sure you want to delete "${title}"?`)) return;
+    
+    const tid = toast.loading('Deleting material...');
+    try {
+      // 1. Delete from MongoDB & update Prisma via server
+      await deleteMaterial(mongodbId, user.uid);
+      
+      // 2. Clean up from Firestore index (Client has permissions)
+      const q = query(collection(db, 'material_index'), where('mongodbId', '==', mongodbId));
+      const snap = await getDocs(q);
+      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+
+      // 3. Decrement Firestore count
+      await setDoc(doc(db, 'users', user.uid), {
+        contributionCount: increment(-1)
+      }, { merge: true });
+
+      toast.success('Deleted successfully', { id: tid });
+    } catch (err: any) {
+      toast.error(err.message || 'Deletion failed', { id: tid });
+    }
+  };
+
+  const handleGenericDelete = async (collectionName: string, docId: string, title: string) => {
+    if (!user) return;
+    if (!window.confirm(`Are you sure you want to delete this resource?`)) return;
+
+    const tid = toast.loading('Removing archive...');
+    try {
+      // 1. Delete from Firestore
+      await deleteDoc(doc(db, collectionName, docId));
+      
+      // 2. Decrement contribution count in Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        contributionCount: increment(-1)
+      }, { merge: true });
+
+      // 3. Decrement in MongoDB (Papers in MongoDB are handled by Prisma relation Cascades if storage URLs change, but for now we focus on sync)
+      await decrementContribution(user.uid); 
+
+      toast.success('Removed from vault', { id: tid });
+    } catch (err: any) {
+      toast.error(err.message || 'Deletion failed', { id: tid });
+    }
+  };
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const toggleTheme = (newTheme: string, e: React.MouseEvent) => {
+    // @ts-ignore
+    if (!document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setTheme(newTheme);
+      return;
+    }
+
+    const x = e.clientX;
+    const y = e.clientY;
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y)
+    );
+
+    document.documentElement.classList.add('view-transitioning');
+
+    // @ts-ignore
+    const transition = document.startViewTransition(async () => {
+      setTheme(newTheme);
+      // Wait for next-themes to apply class to html
+      await new Promise(resolve => setTimeout(resolve, 50));
+    });
+
+    transition.ready.then(() => {
+      const clipPath = [
+        `circle(0px at ${x}px ${y}px)`,
+        `circle(${endRadius}px at ${x}px ${y}px)`,
+      ];
+      
+      document.documentElement.animate(
+        {
+          clipPath: newTheme === "dark" ? clipPath : [...clipPath].reverse(),
+        },
+        {
+          duration: 700,
+          easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+          pseudoElement: newTheme === "dark" ? "::view-transition-new(root)" : "::view-transition-old(root)",
+        }
+      );
+    });
+
+    transition.finished.finally(() => {
+      document.documentElement.classList.remove('view-transitioning');
+    });
+  };
+
+  // User List Modal State
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalUsers, setModalUsers] = useState<any[]>([]);
+  const [modalLoading, setModalLoading] = useState(false);
+
+  const handleOpenUserList = async (title: string, uids: string[]) => {
+    setModalTitle(title);
+    setModalUsers([]);
+    setShowUserModal(true);
+    setModalLoading(true);
+    
+    try {
+      if (uids.length === 0) {
+        setModalUsers([]);
+        return;
+      }
+      const result = await getUsersByFirebaseUids(uids);
+      if (result.success) {
+        setModalUsers(result.users || []);
+      }
+    } catch (error) {
+      toast.error(`Failed to load ${title.toLowerCase()}`);
+    } finally {
+      setModalLoading(false);
+    }
+  };
   
   // Name Change State
   const [name, setName] = useState('');
@@ -79,22 +207,61 @@ export default function SettingsPage() {
     }
   };
 
-  // Setup queries for storage
-  // Note: These will safely return empty if no uploads exist yet.
-  const [materials] = useCollection(
-    user ? query(collection(db, 'materials'), where('userId', '==', user.uid)) : null
-  );
-  const [papers] = useCollection(
-    user ? query(collection(db, 'papers'), where('userId', '==', user.uid)) : null
-  );
-  const [questions] = useCollection(
-    user ? query(collection(db, 'question-papers'), where('userId', '==', user.uid)) : null
-  );
-  const [models] = useCollection(
-    user ? query(collection(db, 'model-papers'), where('userId', '==', user.uid)) : null
-  );
+  // Real-time tracking for the Storage Vault counters
+  const qMaterials = useMemo(() => 
+    user ? query(collection(db, 'material_index'), where('userId', '==', user.uid)) : null
+  , [user?.uid]);
+  
+  const qPapers = useMemo(() => 
+    user ? query(collection(db, 'research_papers'), where('userId', '==', user.uid)) : null
+  , [user?.uid]);
 
-  const totalFiles = (materials?.docs.length || 0) + (papers?.docs.length || 0) + (questions?.docs.length || 0) + (models?.docs.length || 0);
+  const qQuestions = useMemo(() => 
+    user ? query(collection(db, 'question_papers'), where('userId', '==', user.uid)) : null
+  , [user?.uid]);
+
+  const qModels = useMemo(() => 
+    user ? query(collection(db, 'model_papers'), where('userId', '==', user.uid)) : null
+  , [user?.uid]);
+
+  const [snapMaterials, loadingMaterials] = useCollection(qMaterials);
+  const [snapPapers, loadingPapers] = useCollection(qPapers);
+  const [snapQuestions, loadingQuestions] = useCollection(qQuestions);
+  const [snapModels, loadingModels] = useCollection(qModels);
+
+  const counts = useMemo(() => ({
+    materials: snapMaterials?.size ?? 0,
+    papers: snapPapers?.size ?? 0,
+    questions: snapQuestions?.size ?? 0,
+    models: snapModels?.size ?? 0,
+  }), [snapMaterials, snapPapers, snapQuestions, snapModels]);
+
+  // Calculate aggregate storage size
+  const totalSizeBytes = useMemo(() => {
+    let sum = 0;
+    snapMaterials?.docs.forEach(d => sum += (d.data().size || 0));
+    snapPapers?.docs.forEach(d => sum += (d.data().size || 0));
+    snapQuestions?.docs.forEach(d => sum += (d.data().size || 0));
+    snapModels?.docs.forEach(d => sum += (d.data().size || 0));
+    return sum;
+  }, [snapMaterials, snapPapers, snapQuestions, snapModels]);
+
+  const MAX_STORAGE = 500 * 1024 * 1024; // 500 MB quota
+  const storagePercentage = Math.min((totalSizeBytes / MAX_STORAGE) * 100, 100);
+
+  const formatSize = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
+  const isVaultLoading = loadingMaterials || loadingPapers || loadingQuestions || loadingModels;
+  const totalFiles = counts.materials + counts.papers + counts.questions + counts.models;
+
+  // Use profile contribution count as a fallback if the live count hasn't loaded yet
+  const displayedTotal = totalFiles > 0 ? totalFiles : (profile?.contributionCount || 0);
 
   return (
     <div className="flex flex-col gap-8 max-w-4xl">
@@ -116,13 +283,13 @@ export default function SettingsPage() {
           
           <div className="flex bg-secondary p-1.5 rounded-2xl border border-border/50">
             <button
-              onClick={() => setTheme('light')}
+              onClick={(e) => toggleTheme('light', e)}
               className={`flex-1 flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-bold transition-all ${mounted && theme === 'light' ? 'bg-white shadow-lg text-slate-950' : 'text-muted-foreground hover:text-foreground'}`}
             >
               <Sun className="h-4 w-4" /> Light
             </button>
             <button
-              onClick={() => setTheme('dark')}
+              onClick={(e) => toggleTheme('dark', e)}
               className={`flex-1 flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-bold transition-all ${mounted && theme === 'dark' ? 'bg-slate-800 shadow-lg text-white' : 'text-muted-foreground hover:text-foreground'}`}
             >
               <Moon className="h-4 w-4" /> Dark
@@ -198,30 +365,74 @@ export default function SettingsPage() {
 
             {/* Social Stats */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-secondary/50 rounded-2xl p-4 border border-border/50 flex items-center gap-4 group hover:bg-secondary transition-all">
+              <button 
+                onClick={() => handleOpenUserList('Followers', profile?.followers || [])}
+                className="bg-secondary/50 rounded-2xl p-4 border border-border/50 flex items-center gap-4 group hover:bg-secondary transition-all"
+              >
                 <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
                   <Users className="h-5 w-5 text-blue-500" />
                 </div>
-                <div>
+                <div className="text-left">
                   <p className="text-xl font-black text-foreground">{profile?.followers?.length || 0}</p>
                   <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Followers</p>
                 </div>
-              </div>
-              <div className="bg-secondary/50 rounded-2xl p-4 border border-border/50 flex items-center gap-4 group hover:bg-secondary transition-all">
+              </button>
+              <button 
+                onClick={() => handleOpenUserList('Following', profile?.following || [])}
+                className="bg-secondary/50 rounded-2xl p-4 border border-border/50 flex items-center gap-4 group hover:bg-secondary transition-all"
+              >
                 <div className="h-10 w-10 rounded-xl bg-orange-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
                   <UserPlus className="h-5 w-5 text-orange-500" />
                 </div>
-                <div>
+                <div className="text-left">
                   <p className="text-xl font-black text-foreground">{profile?.following?.length || 0}</p>
                   <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">Following</p>
                 </div>
-              </div>
+              </button>
             </div>
-            
           </div>
         </div>
-
       </div>
+
+      {showUserModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md glass bg-card rounded-[2.5rem] border border-border shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+             <div className="p-6 border-b border-border flex justify-between items-center bg-secondary/30">
+                <h4 className="text-xl font-black font-outfit text-foreground uppercase tracking-widest">{modalTitle}</h4>
+                <button onClick={() => setShowUserModal(false)} className="h-8 w-8 rounded-full bg-secondary hover:bg-muted flex items-center justify-center transition-colors">
+                   <Trash2 className="h-4 w-4 text-muted-foreground" />
+                </button>
+             </div>
+             <div className="max-h-[60vh] overflow-y-auto p-4 flex flex-col gap-3">
+                {modalLoading ? (
+                  <div className="py-12 flex flex-col items-center justify-center gap-4">
+                     <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                     <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Fetching Network...</p>
+                  </div>
+                ) : modalUsers.length > 0 ? (
+                  modalUsers.map(u => (
+                    <Link href={`/dashboard/profile/${u.id}`} key={u.id} className="flex items-center justify-between p-4 rounded-2xl bg-secondary/50 hover:bg-primary/5 border border-transparent hover:border-primary/20 transition-all group">
+                       <div className="flex items-center gap-4">
+                          <div className="h-12 w-12 rounded-xl border border-border overflow-hidden bg-background">
+                             {u.avatarUrl ? <img src={u.avatarUrl} className="h-full w-full object-cover" /> : <User className="h-6 w-6 m-3 text-muted-foreground" />}
+                          </div>
+                          <div>
+                             <p className="font-bold text-foreground group-hover:text-primary transition-colors">{u.name}</p>
+                             <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tighter">{u.college || 'Universal Campus'}</p>
+                          </div>
+                       </div>
+                    </Link>
+                  ))
+                ) : (
+                  <div className="py-12 text-center text-muted-foreground">
+                     <Users className="h-12 w-12 mx-auto mb-4 opacity-10" />
+                     <p className="text-sm font-medium italic">No one found here yet.</p>
+                  </div>
+                )}
+             </div>
+          </div>
+        </div>
+      )}
 
       {/* Storage & Uploads */}
       <div className="glass rounded-[2.5rem] p-8 md:p-10 border border-border">
@@ -232,9 +443,31 @@ export default function SettingsPage() {
             </div>
             <div>
               <h3 className="text-2xl font-bold text-foreground font-outfit">My Storage Vault</h3>
-              <p className="text-sm font-medium text-muted-foreground mt-1">You have uploaded {totalFiles} resources across all categories.</p>
+              <p className="text-sm font-medium text-muted-foreground mt-1">
+                {isVaultLoading ? 'Calculating archive size...' : `You have uploaded ${displayedTotal} resources across all categories.`}
+              </p>
             </div>
           </div>
+          
+          {/* Storage Usage Indicator */}
+          {!isVaultLoading && (
+            <div className="flex flex-col items-end gap-2 min-w-[180px]">
+              <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                <span>Occupied: <span className="text-foreground">{formatSize(totalSizeBytes)}</span></span>
+                <span className="opacity-30">/</span>
+                <span>Total: <span className="text-foreground">{formatSize(MAX_STORAGE)}</span></span>
+              </div>
+              <div className="w-full h-2.5 bg-secondary rounded-full overflow-hidden border border-border/50 relative">
+                 <div 
+                   className="absolute inset-y-0 left-0 bg-gradient-to-r from-orange-500 to-amber-400 transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(249,115,22,0.3)]"
+                   style={{ width: `${storagePercentage}%` }}
+                 />
+              </div>
+              <span className="text-[10px] font-black italic text-orange-500/80">
+                {storagePercentage.toFixed(1)}% of your secure vault utilized
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -243,18 +476,26 @@ export default function SettingsPage() {
           <div className="p-6 rounded-3xl border border-border/50 bg-secondary/50 hover:bg-secondary transition-colors">
             <div className="flex items-center gap-3 mb-6">
               <BookOpen className="h-5 w-5 text-blue-500" />
-              <h4 className="font-bold text-foreground">Study Materials ({materials?.docs.length || 0})</h4>
+              <h4 className="font-bold text-foreground">Study Materials ({isVaultLoading ? '...' : counts.materials})</h4>
             </div>
-            {materials?.docs.length === 0 ? (
+            {snapMaterials?.empty ? (
               <p className="text-sm text-muted-foreground italic">No study materials uploaded yet.</p>
             ) : (
               <div className="space-y-3">
-                {materials?.docs.map(doc => (
-                  <div key={doc.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
-                    <span className="truncate pr-4">{doc.data().title}</span>
-                    <button className="text-rose-500 hover:scale-110 transition-transform"><Trash2 className="h-4 w-4" /></button>
-                  </div>
-                ))}
+                {snapMaterials?.docs.map(snap => {
+                  const data = snap.data();
+                  return (
+                    <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
+                      <span className="truncate pr-4">{data.fileName}</span>
+                      <button 
+                        onClick={() => handleDeleteMaterial(data.mongodbId, data.fileName)}
+                        className="text-rose-500 hover:scale-110 transition-transform"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -263,16 +504,21 @@ export default function SettingsPage() {
           <div className="p-6 rounded-3xl border border-border/50 bg-secondary/50 hover:bg-secondary transition-colors">
             <div className="flex items-center gap-3 mb-6">
               <FileText className="h-5 w-5 text-purple-500" />
-              <h4 className="font-bold text-foreground">Research Papers ({papers?.docs.length || 0})</h4>
+              <h4 className="font-bold text-foreground">Research Papers ({isVaultLoading ? '...' : counts.papers})</h4>
             </div>
-            {papers?.docs.length === 0 ? (
+            {snapPapers?.empty ? (
               <p className="text-sm text-muted-foreground italic">No research papers uploaded yet.</p>
             ) : (
               <div className="space-y-3">
-                {papers?.docs.map(doc => (
-                  <div key={doc.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
-                    <span className="truncate pr-4">{doc.data().title}</span>
-                    <button className="text-rose-500 hover:scale-110 transition-transform"><Trash2 className="h-4 w-4" /></button>
+                {snapPapers?.docs.map(snap => (
+                  <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
+                    <span className="truncate pr-4">{snap.data().title}</span>
+                    <button 
+                      onClick={() => handleGenericDelete('research_papers', snap.id, snap.data().title)}
+                      className="text-rose-500 hover:scale-110 transition-transform"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -283,16 +529,21 @@ export default function SettingsPage() {
           <div className="p-6 rounded-3xl border border-border/50 bg-secondary/50 hover:bg-secondary transition-colors">
             <div className="flex items-center gap-3 mb-6">
               <GraduationCap className="h-5 w-5 text-orange-500" />
-              <h4 className="font-bold text-foreground">Question Papers ({questions?.docs.length || 0})</h4>
+              <h4 className="font-bold text-foreground">Question Papers ({isVaultLoading ? '...' : counts.questions})</h4>
             </div>
-            {questions?.docs.length === 0 ? (
+            {snapQuestions?.empty ? (
               <p className="text-sm text-muted-foreground italic">No question papers uploaded yet.</p>
             ) : (
               <div className="space-y-3">
-                {questions?.docs.map(doc => (
-                  <div key={doc.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
-                    <span className="truncate pr-4">{doc.data().subjectCode} - {doc.data().year}</span>
-                    <button className="text-rose-500 hover:scale-110 transition-transform"><Trash2 className="h-4 w-4" /></button>
+                {snapQuestions?.docs.map(snap => (
+                  <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
+                    <span className="truncate pr-4">{snap.data().code} - {snap.data().year}</span>
+                    <button 
+                      onClick={() => handleGenericDelete('question_papers', snap.id, snap.data().subject)}
+                      className="text-rose-500 hover:scale-110 transition-transform"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -303,16 +554,21 @@ export default function SettingsPage() {
           <div className="p-6 rounded-3xl border border-border/50 bg-secondary/50 hover:bg-secondary transition-colors">
             <div className="flex items-center gap-3 mb-6">
               <Award className="h-5 w-5 text-emerald-500" />
-              <h4 className="font-bold text-foreground">Model Papers ({models?.docs.length || 0})</h4>
+              <h4 className="font-bold text-foreground">Model Papers ({isVaultLoading ? '...' : counts.models})</h4>
             </div>
-            {models?.docs.length === 0 ? (
+            {snapModels?.empty ? (
               <p className="text-sm text-muted-foreground italic">No model papers uploaded yet.</p>
             ) : (
               <div className="space-y-3">
-                {models?.docs.map(doc => (
-                  <div key={doc.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
-                    <span className="truncate pr-4">{doc.data().title}</span>
-                    <button className="text-rose-500 hover:scale-110 transition-transform"><Trash2 className="h-4 w-4" /></button>
+                {snapModels?.docs.map(snap => (
+                  <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
+                    <span className="truncate pr-4">{snap.data().title}</span>
+                    <button 
+                      onClick={() => handleGenericDelete('model_papers', snap.id, snap.data().subject)}
+                      className="text-rose-500 hover:scale-110 transition-transform"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 ))}
               </div>

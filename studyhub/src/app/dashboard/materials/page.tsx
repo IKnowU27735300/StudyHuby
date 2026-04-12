@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Filter, Download, Calendar, Tag, User as UserIcon, BookOpen, Search, X, Loader2, Eye } from 'lucide-react';
+import { Plus, Filter, Download, Calendar, Tag, User as UserIcon, BookOpen, Search, X, Loader2, Eye, Trash2, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'react-hot-toast';
-import { uploadMaterial, getMaterials, downloadMaterial } from '@/app/actions/materials';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, doc, setDoc, increment, query, where, getDocs, deleteDoc } from 'firebase/firestore';
+import { uploadMaterial, getMaterials, downloadMaterial, deleteMaterial } from '@/app/actions/materials';
 
 export default function MaterialsPage() {
   const { user } = useAuth();
@@ -39,6 +41,32 @@ export default function MaterialsPage() {
     }
   };
 
+  const handleDelete = async (id: string, materialTitle: string) => {
+    if (!user) return;
+    if (!window.confirm(`Are you sure you want to delete "${materialTitle}"?`)) return;
+
+    const toastId = toast.loading('Deleting material...');
+    try {
+      // 1. Delete from MongoDB & update Prisma via server
+      await deleteMaterial(id, user.uid);
+      
+      // 2. Clean up from Firestore index (Client has permissions)
+      const q = query(collection(db, 'material_index'), where('mongodbId', '==', id));
+      const snap = await getDocs(q);
+      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+
+      // 3. Decrement Firestore count
+      await setDoc(doc(db, 'users', user.uid), {
+        contributionCount: increment(-1)
+      }, { merge: true });
+
+      toast.success('Material deleted successfully', { id: toastId });
+      fetchMaterials(); // Refresh
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete material', { id: toastId });
+    }
+  };
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !file || !title || !subject || !code || !year) {
@@ -59,7 +87,22 @@ export default function MaterialsPage() {
       formData.append('tags', JSON.stringify(tags.split(',').map(t => t.trim()).filter(t => t)));
       formData.append('file', file);
 
-      await uploadMaterial(formData);
+      const result = await uploadMaterial(formData);
+
+      // 2. Index in Firestore for real-time counters (Done on client to ensure access)
+      await addDoc(collection(db, 'material_index'), {
+        fileName: result.title,
+        category: result.subject,
+        mongodbId: result.id,
+        userId: user.uid,
+        size: file.size, // Added size for indicator
+        createdAt: new Date(),
+      });
+
+      // 3. Increment Firestore count
+      await setDoc(doc(db, 'users', user.uid), {
+        contributionCount: increment(1)
+      }, { merge: true });
 
       toast.success('Document uploaded & synced successfully!', { id: toastId });
       setIsModalOpen(false);
@@ -198,6 +241,15 @@ export default function MaterialsPage() {
                   <Download className="h-4 w-4" />
                   {material.fileSize ? formatFileSize(material.fileSize) : 'Download'}
                 </button>
+                {material.user?.firebaseUid === user?.uid && (
+                  <button 
+                    onClick={() => handleDelete(material.id, material.title)}
+                    className="h-12 w-12 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
+                    title="Delete Material"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -269,6 +321,3 @@ export default function MaterialsPage() {
     </div>
   );
 }
-
-// Missing icon fix
-import { ShieldCheck } from 'lucide-react';

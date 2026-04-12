@@ -7,7 +7,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import { toast } from "react-hot-toast";
 
 export default function OnboardingModal() {
-  const { user, profile, isOnboardingComplete } = useAuth();
+  const { user, profile, loading: authLoading, isOnboardingComplete } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     college: '',
@@ -17,7 +17,7 @@ export default function OnboardingModal() {
     registrationNo: ''
   });
 
-  if (!user || isOnboardingComplete) return null;
+  if (authLoading || !user || isOnboardingComplete) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
