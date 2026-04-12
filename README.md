@@ -4,8 +4,9 @@
 [![Next.js](https://img.shields.io/badge/Built%20With-Next.js%2015-000000?style=for-the-badge&logo=next.js)](https://nextjs.org)
 [![Firebase](https://img.shields.io/badge/State-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=white)](https://firebase.google.com)
 [![Prisma](https://img.shields.io/badge/ORM-Prisma%207-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://prisma.io)
+[![MongoDB](https://img.shields.io/badge/Database-MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://mongodb.com)
 
-StudyHub is a premium, state-of-the-art academic platform designed to streamline the sharing and discovery of educational resources. Built with a sleek black-and-gold aesthetic, it offers a seamless experience for students and researchers to manage notes, papers, and exam materials.
+StudyHub is a premium, state-of-the-art academic platform designed to streamline the sharing and discovery of educational resources. Built with a sleek, high-contrast aesthetic, it offers a hybrid infrastructure (MongoDB + Firestore) for a seamless experience in managing notes, papers, and exam materials.
 
 ---
 
@@ -24,8 +25,9 @@ StudyHub is a premium, state-of-the-art academic platform designed to streamline
 
 ### 👤 Social & Engagement
 - **Follower System**: Follow your peers and build a network of academic contributors.
-- **Login Streaks**: Keep your study momentum alive with a gamified streak system and visual heatmaps.
-- **Contribution Vault**: Easily manage your own uploads in a personalized storage section.
+- **Real-time Storage Vault**: A centralized hub in **Settings** to manage all your uploads with live file counts and direct deletion across 4 resource categories.
+- **Usage Metrics**: Interactive storage indicator with quota tracking (**500MB Limit**) and real-time occupied space calculations.
+- **Login Streaks**: Keep your study momentum alive with a gamified streak system.
 
 ---
 
@@ -39,7 +41,7 @@ graph TD
     B --> C[Authorized Access]
     C --> D[Resource Upload - Firebase Storage]
     C --> E[Real-time Metadata - Firestore]
-    C --> F[User/Social Data - Prisma + PostgreSQL]
+    C --> F[User/Social Data - Prisma + MongoDB Atlas]
     
     subgraph "Frontend Layer"
         G[Dashboard Layout]
@@ -80,11 +82,11 @@ sequenceDiagram
 
 ## 🛠️ Tech Stack
 
-- **Core**: [Next.js 15+](https://nextjs.org) (App Router), [React 19](https://react.dev)
-- **Styling**: [Tailwind CSS 4](https://tailwindcss.com), [Lucide React Icons](https://lucide.dev)
-- **Database/ORM**: [Prisma 7](https://prisma.io), [PostgreSQL](https://postgresql.org)
+- **Core**: [Next.js 16+](https://nextjs.org) (App Router), [React 19](https://react.dev)
+- **Styling**: Vanilla CSS, [Framer Motion](https://framer.com/motion), [Lucide React Icons](https://lucide.dev)
+- **Database/ORM**: [Prisma 6+](https://prisma.io), [MongoDB Atlas](https://mongodb.com)
 - **State/Real-time**: [Google Firebase](https://firebase.google.com) (Auth, Firestore, Storage)
-- **Persistence**: [Vercel](https://vercel.com)
+- **Persistence**: Vercel
 
 ---
 
@@ -94,7 +96,7 @@ sequenceDiagram
 
 - [Node.js 18+](https://nodejs.org)
 - [Firebase Account & Config](https://console.firebase.google.com)
-- [PostgreSQL Database](https://www.postgresql.org/) (Check `.env.example`)
+- [MongoDB Atlas Connection URI](https://mongodb.com) (Check `.env.example`)
 
 ### Installation
 
