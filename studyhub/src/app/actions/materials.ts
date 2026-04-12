@@ -21,17 +21,26 @@ export async function uploadMaterial(formData: FormData) {
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
 
+  // 0. Find the MongoDB User ID using the Firebase UID
+  const mongoUser = await prisma.user.findUnique({
+    where: { firebaseUid: userId }
+  });
+
+  if (!mongoUser) {
+    throw new Error('User not found in MongoDB. Please log in again.');
+  }
+
   try {
     // 1. Store the full file and metadata in MongoDB
     const mongoResult = await prisma.studyMaterial.create({
       data: {
-        userId,
+        userId: mongoUser.id, // Use the MongoDB ObjectId
         title,
         subject,
         subjectCode,
         year,
-        branch: "General", // Default for now
-        college: "My College", // Default for now
+        branch: "General", 
+        college: "My College", 
         fileContent: buffer,
         fileSize: file.size,
         mimeType: file.type,

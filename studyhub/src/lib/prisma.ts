@@ -1,4 +1,4 @@
-const { PrismaClient } = require('S:\\CLG\\Projects\\StudyHuby\\studyhub\\node_modules\\.prisma\\client\\index.js');
+import { PrismaClient } from '@prisma/client';
 
 const prismaClientSingleton = () => {
   return new PrismaClient();

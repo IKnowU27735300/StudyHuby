@@ -5,6 +5,7 @@ import { onAuthStateChanged, User, signInWithPopup, signOut } from 'firebase/aut
 import { auth, googleProvider, db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
+import { syncUser } from '@/app/actions/user';
 
 interface UserProfile {
   college?: string;
@@ -53,7 +54,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const userDoc = await getDoc(userDocRef);
 
         if (userDoc.exists()) {
-          setProfile(userDoc.data() as UserProfile);
+          const currentProfile = userDoc.data() as UserProfile;
+          // Update last login in Firestore
+          await setDoc(userDocRef, {
+            lastLoginAt: serverTimestamp(),
+            // Optionally increment streak here if needed
+          }, { merge: true });
+          setProfile(currentProfile);
         } else {
           // Initialize fresh profile
           const newProfile: UserProfile = {
@@ -73,6 +80,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           });
           setProfile(newProfile);
         }
+
+        // Sync with MongoDB
+        await syncUser({
+          firebaseUid: user.uid,
+          email: user.email!,
+          name: user.displayName,
+          avatarUrl: user.photoURL
+        });
       } else {
         setProfile(null);
       }

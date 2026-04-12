@@ -14,6 +14,7 @@ datasource db {
 // User & Auth
 model User {
   id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  firebaseUid       String   @unique
   email             String   @unique
   name              String?
   avatarUrl         String?
@@ -24,7 +25,7 @@ model User {
   course            String?
   semester          Int?
   academicYear      String?
-  registrationNo    String? @unique
+  registrationNo    String?
 
   // Streak tracking
   lastLoginAt       DateTime @default(now())
