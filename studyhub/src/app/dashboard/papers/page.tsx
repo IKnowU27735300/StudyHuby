@@ -65,6 +65,11 @@ export default function ResearchPapersPage() {
         url
       });
 
+      if (!mongoResult.success) {
+        throw new Error(mongoResult.error || "Failed to sync research paper to MongoDB profile.");
+      }
+
+
       // 2. Save to Firestore with MongoDB ID reference
       await addDoc(collection(db, 'research_papers'), {
         title,

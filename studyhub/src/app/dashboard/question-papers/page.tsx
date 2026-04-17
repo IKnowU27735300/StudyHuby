@@ -66,6 +66,11 @@ export default function QuestionPapersPage() {
         tags: [branch, code.toUpperCase()]
       });
 
+      if (!mongoResult.success) {
+        throw new Error(mongoResult.error || "Failed to sync question paper to MongoDB profile.");
+      }
+
+
       // 2. Save to Firestore with MongoDB ID reference
       await addDoc(collection(db, 'question_papers'), {
         subject,

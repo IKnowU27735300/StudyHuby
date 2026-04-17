@@ -13,11 +13,17 @@ export async function createResearchPaper(data: {
   url: string;
 }) {
   try {
+    console.log("Creating ResearchPaper for user:", data.firebaseUid);
     const mongoUser = await prisma.user.findFirst({
       where: { firebaseUid: data.firebaseUid } as any
     });
 
-    if (!mongoUser) throw new Error("User not synced to MongoDB");
+    if (!mongoUser) {
+      console.error("User not found in MongoDB for Firebase UID:", data.firebaseUid);
+      throw new Error("User profile not synced. Please refresh the page.");
+    }
+
+    console.log("Found MongoDB User:", mongoUser.id);
 
     const result = await prisma.researchPaper.create({
       data: {
@@ -32,12 +38,14 @@ export async function createResearchPaper(data: {
       }
     });
 
-    return { success: true, id: result.id };
+    console.log("ResearchPaper created successfully:", result.id);
+    return { success: true, id: String(result.id) };
   } catch (error: any) {
     console.error("Failed to create ResearchPaper in MongoDB:", error);
-    throw new Error(error.message);
+    return { success: false, error: error.message };
   }
 }
+
 
 export async function createQuestionPaper(data: {
   firebaseUid: string;
@@ -51,11 +59,15 @@ export async function createQuestionPaper(data: {
   tags: string[];
 }) {
   try {
+    console.log("Creating QuestionPaper for user:", data.firebaseUid);
     const mongoUser = await prisma.user.findFirst({
       where: { firebaseUid: data.firebaseUid } as any
     });
 
-    if (!mongoUser) throw new Error("User not synced to MongoDB");
+    if (!mongoUser) {
+      console.error("User not found in MongoDB for Firebase UID:", data.firebaseUid);
+      throw new Error("User profile not synced. Please refresh the page.");
+    }
 
     const result = await prisma.questionPaper.create({
       data: {
@@ -71,12 +83,14 @@ export async function createQuestionPaper(data: {
       }
     });
 
-    return { success: true, id: result.id };
+    console.log("QuestionPaper created successfully:", result.id);
+    return { success: true, id: String(result.id) };
   } catch (error: any) {
     console.error("Failed to create QuestionPaper in MongoDB:", error);
-    throw new Error(error.message);
+    return { success: false, error: error.message };
   }
 }
+
 
 export async function createModelPaper(data: {
   firebaseUid: string;
@@ -90,11 +104,15 @@ export async function createModelPaper(data: {
   tags: string[];
 }) {
   try {
+    console.log("Creating ModelPaper for user:", data.firebaseUid);
     const mongoUser = await prisma.user.findFirst({
       where: { firebaseUid: data.firebaseUid } as any
     });
 
-    if (!mongoUser) throw new Error("User not synced to MongoDB");
+    if (!mongoUser) {
+      console.error("User not found in MongoDB for Firebase UID:", data.firebaseUid);
+      throw new Error("User profile not synced. Please refresh the page.");
+    }
 
     const result = await prisma.modelPaper.create({
       data: {
@@ -110,12 +128,14 @@ export async function createModelPaper(data: {
       }
     });
 
-    return { success: true, id: result.id };
+    console.log("ModelPaper created successfully:", result.id);
+    return { success: true, id: String(result.id) };
   } catch (error: any) {
     console.error("Failed to create ModelPaper in MongoDB:", error);
-    throw new Error(error.message);
+    return { success: false, error: error.message };
   }
 }
+
 
 export async function deleteAcademicItem(id: string, firebaseUid: string, type: 'RESEARCH' | 'QUESTION' | 'MODEL') {
   try {
@@ -139,9 +159,11 @@ export async function deleteAcademicItem(id: string, firebaseUid: string, type: 
         break;
     }
 
+    console.log(`Academic item ${id} deleted successfully from MongoDB.`);
     return { success: true };
   } catch (error: any) {
     console.error(`Failed to delete ${type} from MongoDB:`, error);
-    throw new Error(error.message);
+    return { success: false, error: error.message };
   }
 }
+

@@ -61,6 +61,11 @@ export default function ModelPapersPage() {
         tags: [subject, 'Model Paper']
       });
 
+      if (!mongoResult.success) {
+        throw new Error(mongoResult.error || "Failed to sync model paper to MongoDB profile.");
+      }
+
+
       // 2. Save to Firestore with MongoDB ID reference
       await addDoc(collection(db, 'model_papers'), {
         title,
