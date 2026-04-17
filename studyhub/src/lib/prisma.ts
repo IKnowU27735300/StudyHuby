@@ -1,7 +1,18 @@
 import { PrismaClient } from '@prisma/client';
 
 const prismaClientSingleton = () => {
-  return new PrismaClient();
+  const client = new PrismaClient({
+    log: ['error', 'warn'],
+  });
+  
+  // Optional: Test connection on start-up (only in dev to avoid blocking production startup)
+  if (process.env.NODE_ENV === 'development') {
+    client.$connect()
+      .then(() => console.log('Successfully connected to MongoDB via Prisma'))
+      .catch((err) => console.error('Prisma failed to connect to MongoDB:', err));
+  }
+  
+  return client;
 };
 
 declare global {
