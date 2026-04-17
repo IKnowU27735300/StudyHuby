@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { Award, Plus, Grid, List, Download, Star, Clock, Loader2, X, Eye } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { incrementContribution } from '@/app/actions/user';
+import { incrementContribution, incrementDownloads } from '@/app/actions/user';
 import { db, storage } from '@/lib/firebase';
 import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { toast } from 'react-hot-toast';
 import { createModelPaper } from '@/app/actions/academic';
+import FileViewerModal from '@/components/FileViewerModal';
 
 
 export default function ModelPapersPage() {
@@ -22,6 +23,10 @@ export default function ModelPapersPage() {
   const [subject, setSubject] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // File Viewer State
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerData, setViewerData] = useState({ url: '', name: '', mimeType: 'application/pdf' });
 
   const [snapshot, loading, error] = useCollection(
     query(collection(db, 'model_papers'), orderBy('createdAt', 'desc'))
@@ -95,6 +100,16 @@ export default function ModelPapersPage() {
     }
   };
 
+  const handleOpenViewer = async (model: any) => {
+    setViewerData({
+      url: model.url,
+      name: model.title,
+      mimeType: model.url.includes('.pdf') ? 'application/pdf' : 'image/jpeg'
+    });
+    setViewerOpen(true);
+    if (model.userId) await incrementDownloads(model.userId);
+  };
+
   return (
     <div className="flex flex-col gap-8 relative">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -162,7 +177,7 @@ export default function ModelPapersPage() {
               </div>
               
               <div className="flex gap-2 mt-8 relative z-10">
-                 <button onClick={() => window.open(model.url, '_blank')} className="h-14 w-14 shrink-0 rounded-2xl bg-white/5 text-white border border-white/10 font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition-all shadow-xl shadow-emerald-600/5">
+                 <button onClick={() => handleOpenViewer(model)} className="h-14 w-14 shrink-0 rounded-2xl bg-white/5 text-white border border-white/10 font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition-all shadow-xl shadow-emerald-600/5">
                   <Eye className="h-5 w-5" />
                 </button>
                 <button onClick={() => window.open(model.url, '_blank')} className="flex-1 h-14 rounded-2xl bg-emerald-600/10 text-emerald-400 border border-emerald-600/20 font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 hover:text-white transition-all shadow-xl shadow-emerald-600/5">
@@ -221,6 +236,15 @@ export default function ModelPapersPage() {
           </div>
         </div>
       )}
+
+      <FileViewerModal 
+        isOpen={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        fileUrl={viewerData.url}
+        fileName={viewerData.name}
+        mimeType={viewerData.mimeType}
+        onDownload={() => window.open(viewerData.url, '_blank')}
+      />
     </div>
   );
 }

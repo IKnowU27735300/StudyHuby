@@ -8,9 +8,11 @@ import { db } from '@/lib/firebase';
 import { collection, query, orderBy, where } from 'firebase/firestore';
 import { globalSearch, SearchCategory } from '@/app/actions/search';
 import { downloadMaterial } from '@/app/actions/materials';
+import { incrementDownloads } from '@/app/actions/user';
 import { toast } from 'react-hot-toast';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import FileViewerModal from '@/components/FileViewerModal';
 
 const CATEGORIES: { label: string; value: SearchCategory; icon: any }[] = [
   { label: 'Materials', value: 'MATERIALS', icon: BookOpen },
@@ -30,6 +32,14 @@ export default function DashboardPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
+  // File Viewer State
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerData, setViewerData] = useState<{ url: string | null; name: string; mimeType: string; id?: string }>({
+    url: null,
+    name: '',
+    mimeType: '',
+  });
+
   // Sync with URL if it changes globally
   useEffect(() => {
     const q = searchParams.get('q');
@@ -38,10 +48,39 @@ export default function DashboardPage() {
     if (c !== null) setCategories(c.split(',') as SearchCategory[]);
   }, [searchParams]);
   
-  // Real-time activity feed from Firestore
-  const [activities, loadingActivities] = useCollection(
-    query(collection(db, 'material_index'), orderBy('createdAt', 'desc'))
-  );
+  // Real-time activity feed from Firestore (Unified)
+  // Removing orderBy to ensure data loads even if indices aren't fully propagated
+  const [snapMaterials, loadingM] = useCollection(collection(db, 'material_index'));
+  const [snapQuestions, loadingQ] = useCollection(collection(db, 'question_papers'));
+  const [snapModels, loadingMo] = useCollection(collection(db, 'model_papers'));
+  const [snapResearch, loadingR] = useCollection(collection(db, 'research_papers'));
+
+  const loadingActivities = loadingM || loadingQ || loadingMo || loadingR;
+
+  const activitiesList = useMemo(() => {
+    const all: any[] = [
+      ...(snapMaterials?.docs.map(d => {
+        const data = d.data();
+        return { 
+          ...data, 
+          id: d.id, 
+          _type: 'MATERIALS',
+          title: data.fileName,     // Standardize name
+          subject: data.category    // Standardize category
+        };
+      }) || []),
+      ...(snapQuestions?.docs.map(d => ({ ...d.data(), id: d.id, _type: 'QUESTION_PAPERS' })) || []),
+      ...(snapModels?.docs.map(d => ({ ...d.data(), id: d.id, _type: 'MODEL_PAPERS' })) || []),
+      ...(snapResearch?.docs.map(d => ({ ...d.data(), id: d.id, _type: 'RESEARCH_PAPERS' })) || []),
+    ];
+    
+    // Robust sort handling both Firestore Timestamps and JSON dates
+    return all.sort((a, b) => {
+      const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : new Date(a.createdAt).getTime() || 0;
+      const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : new Date(b.createdAt).getTime() || 0;
+      return timeB - timeA;
+    });
+  }, [snapMaterials, snapQuestions, snapModels, snapResearch]);
 
   // Real-time user count (Active in last 15 mins)
   // Memoize it to avoid infinite re-renders since Date.now() changes every millisecond
@@ -81,13 +120,12 @@ export default function DashboardPage() {
     return () => clearTimeout(timeout);
   }, [searchTerm, categories]);
 
-  const materialsList = activities?.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) || [];
-  const displayMaterials = searchTerm ? searchResults : materialsList.slice(0, 5);
+  const displayMaterials = searchTerm ? searchResults : activitiesList.slice(0, 5);
 
   const stats = [
     { label: 'Total Contributions', value: profile?.contributionCount || 0, icon: FileUp, color: 'text-blue-500', bg: 'bg-blue-500/10' },
     { label: 'Login Streak', value: `${profile?.loginStreak || 0} Days`, icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    { label: 'Library Size', value: materialsList.length, icon: BookMarked, color: 'text-purple-500', bg: 'bg-purple-500/10' },
+    { label: 'Library Size', value: activitiesList.length, icon: BookMarked, color: 'text-purple-500', bg: 'bg-purple-500/10' },
     { label: 'Active Users', value: activeUserCount, icon: Users, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   ];
 
@@ -120,10 +158,43 @@ export default function DashboardPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
+
+      // Real-time stats update: Increment the uploader's download count
+      if (id) {
+        const activity = activitiesList.find(d => d.id === id);
+        if (activity) {
+          const uploaderUid = activity.userId;
+          if (uploaderUid) await incrementDownloads(uploaderUid);
+        }
+      }
+
       toast.success('Download started!', { id: toastId });
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || 'Failed to download file', { id: toastId });
+    }
+  };
+
+  const handleOpenViewer = async (data: any) => {
+    setViewerData({
+      url: data.url || null,
+      name: data.title || data.subject || 'Document',
+      mimeType: data.mimeType || (data.url?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
+      id: data.mongodbId || data.id
+    });
+    setViewerOpen(true);
+
+    // If it's a MongoDB material and doesn't have a URL, fetch it
+    if (!data.url && data._type === 'MATERIALS') {
+      try {
+        const result = await downloadMaterial(data.id);
+        const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
+        const url = window.URL.createObjectURL(blob);
+        setViewerData(prev => ({ ...prev, url, mimeType: result.mimeType }));
+      } catch (err) {
+        toast.error('Failed to load preview');
+        setViewerOpen(false);
+      }
     }
   };
 
@@ -229,30 +300,13 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <button 
-                        onClick={async () => {
-                          if (data.url) {
-                            window.open(data.url, '_blank');
-                          } else if (data._type === 'MATERIALS') {
-                            // Handle preview for MongoDB materials
-                            const toastId = toast.loading('Opening preview...');
-                            try {
-                              const result = await downloadMaterial(data.id);
-                              const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
-                              const url = window.URL.createObjectURL(blob);
-                              window.open(url, '_blank');
-                              setTimeout(() => window.URL.revokeObjectURL(url), 10000); // Clean up after 10s
-                              toast.dismiss(toastId);
-                            } catch (err) {
-                              toast.error('Failed to open preview', { id: toastId });
-                            }
-                          }
-                        }}
+                        onClick={() => handleOpenViewer(data)}
                         className="h-10 px-4 rounded-xl bg-background border border-border text-foreground text-xs font-bold hover:bg-muted transition-colors flex items-center gap-2"
                       >
                         <Eye className="h-4 w-4" /> View
                       </button>
                       <button 
-                        onClick={() => handleDownload(data.id, data.title || data.subject)}
+                        onClick={() => handleDownload(data.mongodbId || data.id, data.title || data.subject)}
                         className="h-10 px-4 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-lg shadow-primary/20"
                       >
                         <Download className="h-4 w-4" /> DL
@@ -311,6 +365,18 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      <FileViewerModal
+        isOpen={viewerOpen}
+        onClose={() => {
+          if (viewerData.url?.startsWith('blob:')) window.URL.revokeObjectURL(viewerData.url);
+          setViewerOpen(false);
+        }}
+        fileUrl={viewerData.url}
+        fileName={viewerData.name}
+        mimeType={viewerData.mimeType}
+        onDownload={() => handleDownload(viewerData.id!, viewerData.name)}
+      />
     </div>
   );
 }

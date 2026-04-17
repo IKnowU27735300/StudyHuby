@@ -56,25 +56,31 @@ export async function uploadMaterial(formData: FormData) {
 }
 
 export async function getMaterials() {
-  return await prisma.studyMaterial.findMany({
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      title: true,
-      subject: true,
-      subjectCode: true,
-      year: true,
-      fileSize: true,
-      mimeType: true,
-      tags: true,
-      createdAt: true,
-      user: {
-        select: {
-          firebaseUid: true
+  try {
+    const materials = await prisma.studyMaterial.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        subject: true,
+        subjectCode: true,
+        year: true,
+        fileSize: true,
+        mimeType: true,
+        tags: true,
+        createdAt: true,
+        user: {
+          select: {
+            firebaseUid: true
+          }
         } as any
       }
-    }
-  });
+    });
+    return materials;
+  } catch (error: any) {
+    console.error("Prisma Error in getMaterials:", error);
+    throw new Error(`Database connection failed: ${error.message}`);
+  }
 }
 
 export async function deleteMaterial(id: string, firebaseUid: string) {

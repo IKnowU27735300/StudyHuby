@@ -167,3 +167,32 @@ export async function deleteAcademicItem(id: string, firebaseUid: string, type: 
   }
 }
 
+export async function downloadAcademicItem(id: string, type: 'RESEARCH' | 'QUESTION' | 'MODEL') {
+  try {
+    let item: any;
+    
+    switch(type) {
+      case 'RESEARCH':
+        item = await prisma.researchPaper.findUnique({ where: { id } });
+        break;
+      case 'QUESTION':
+        item = await prisma.questionPaper.findUnique({ where: { id } });
+        break;
+      case 'MODEL':
+        item = await prisma.modelPaper.findUnique({ where: { id } });
+        break;
+    }
+
+    if (!item) throw new Error("Document not found in MongoDB");
+
+    return { 
+      url: item.fileUrl, 
+      fileName: item.title || item.subject,
+      mimeType: (item.fileUrl as string).includes('.pdf') ? 'application/pdf' : 'image/jpeg'
+    };
+  } catch (error: any) {
+    console.error(`Failed to fetch ${type} URL from MongoDB:`, error);
+    throw new Error(error.message);
+  }
+}
+

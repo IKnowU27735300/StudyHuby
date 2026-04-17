@@ -2,19 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, Filter, Download, Calendar, Tag, User as UserIcon, BookOpen, Search, X, Loader2, Eye, Trash2, ShieldCheck } from 'lucide-react';
+import FileViewerModal from '@/components/FileViewerModal';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, doc, setDoc, increment, query, where, getDocs, deleteDoc } from 'firebase/firestore';
-import { uploadMaterial, getMaterials, downloadMaterial, deleteMaterial } from '@/app/actions/materials';
+import { collection, addDoc, doc, setDoc, increment, query, where, getDocs, deleteDoc, orderBy, serverTimestamp } from 'firebase/firestore';
+import { useCollection } from 'react-firebase-hooks/firestore';
+import { uploadMaterial, downloadMaterial, deleteMaterial } from '@/app/actions/materials';
+import { incrementDownloads } from '@/app/actions/user';
 
 export default function MaterialsPage() {
   const { user } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [materials, setMaterials] = useState<any[]>([]);
-  const [fetching, setFetching] = useState(true);
   
   // Form State
   const [title, setTitle] = useState('');
@@ -25,21 +26,19 @@ export default function MaterialsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  useEffect(() => {
-    fetchMaterials();
-  }, []);
+  // File Viewer State
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerData, setViewerData] = useState<{ url: string | null; name: string; mimeType: string; id?: string }>({
+    url: null,
+    name: '',
+    mimeType: '',
+  });
 
-  const fetchMaterials = async () => {
-    try {
-      const data = await getMaterials();
-      setMaterials(data);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load materials");
-    } finally {
-      setFetching(false);
-    }
-  };
+  const [snapshot, loadingMaterials] = useCollection(
+    query(collection(db, 'material_index'), orderBy('createdAt', 'desc'))
+  );
+
+  const materials = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) || [];
 
   const handleDelete = async (id: string, materialTitle: string) => {
     if (!user) return;
@@ -61,7 +60,6 @@ export default function MaterialsPage() {
       }, { merge: true });
 
       toast.success('Material deleted successfully', { id: toastId });
-      fetchMaterials(); // Refresh
     } catch (err: any) {
       toast.error(err.message || 'Failed to delete material', { id: toastId });
     }
@@ -96,7 +94,7 @@ export default function MaterialsPage() {
         mongodbId: result.id,
         userId: user.uid,
         size: file.size,
-        createdAt: new Date(),
+        createdAt: serverTimestamp(),
       });
 
       // 3. Create a Broadcast Alert for all users (Client handles this now)
@@ -116,7 +114,6 @@ export default function MaterialsPage() {
       toast.success('Document uploaded & synced successfully!', { id: toastId });
       setIsModalOpen(false);
       setTitle(''); setSubject(''); setCode(''); setYear(new Date().getFullYear().toString()); setTags(''); setFile(null);
-      fetchMaterials(); // Refresh list
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || 'Error uploading material', { id: toastId });
@@ -137,9 +134,37 @@ export default function MaterialsPage() {
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
+
+      // Increment stats for uploader
+      const material = materials.find(m => m.id === materialId || m.mongodbId === materialId);
+      if (material?.userId) await incrementDownloads(material.userId);
+
       toast.success('Download started!', { id: toastId });
     } catch (err) {
       toast.error("Download failed", { id: toastId });
+    }
+  };
+
+  const handleOpenViewer = async (material: any) => {
+    setViewerData({
+      url: null,
+      name: material.title,
+      mimeType: material.mimeType || (material.fileName?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
+      id: material.id
+    });
+    setViewerOpen(true);
+
+    try {
+      const result = await downloadMaterial(material.mongodbId || material.id);
+      const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
+      const url = window.URL.createObjectURL(blob);
+      setViewerData(prev => ({ ...prev, url, mimeType: result.mimeType }));
+      
+      // Increment stats for uploader
+      if (material.userId) await incrementDownloads(material.userId);
+    } catch (err) {
+      toast.error('Failed to load preview');
+      setViewerOpen(false);
     }
   };
 
@@ -192,7 +217,7 @@ export default function MaterialsPage() {
         </div>
       </div>
 
-      {fetching ? (
+      {loadingMaterials ? (
         <div className="py-20 flex justify-center">
           <Loader2 className="h-10 w-10 text-primary animate-spin" />
         </div>
@@ -244,11 +269,18 @@ export default function MaterialsPage() {
 
               <div className="p-4 bg-secondary/50 border-t border-border flex gap-2">
                 <button 
+                  onClick={() => handleOpenViewer(material)}
+                  className="h-12 w-12 rounded-xl bg-background border border-border text-foreground hover:bg-muted transition-colors flex items-center justify-center group"
+                  title="View Material"
+                >
+                  <Eye className="h-5 w-5 group-hover:scale-110 transition-transform" />
+                </button>
+                <button 
                   onClick={() => handleDownload(material.id, material.title)}
                   className="flex-1 h-12 rounded-xl bg-primary text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors"
                 >
                   <Download className="h-4 w-4" />
-                  {material.fileSize ? formatFileSize(material.fileSize) : 'Download'}
+                  Download
                 </button>
                 {material.user?.firebaseUid === user?.uid && (
                   <button 
@@ -327,6 +359,18 @@ export default function MaterialsPage() {
           </div>
         </div>
       )}
+
+      <FileViewerModal
+        isOpen={viewerOpen}
+        onClose={() => {
+          if (viewerData.url?.startsWith('blob:')) window.URL.revokeObjectURL(viewerData.url);
+          setViewerOpen(false);
+        }}
+        fileUrl={viewerData.url}
+        fileName={viewerData.name}
+        mimeType={viewerData.mimeType}
+        onDownload={() => handleDownload(viewerData.id!, viewerData.name)}
+      />
     </div>
   );
 }

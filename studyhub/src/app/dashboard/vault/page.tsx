@@ -20,13 +20,30 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { deleteMaterial } from '@/app/actions/materials';
-import { deleteAcademicItem } from '@/app/actions/academic';
+import { deleteMaterial, downloadMaterial } from '@/app/actions/materials';
+import { deleteAcademicItem, downloadAcademicItem } from '@/app/actions/academic';
+import FileViewerModal from '@/components/FileViewerModal';
 
 
 export default function VaultPage() {
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+
+  // File Viewer State
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerData, setViewerData] = useState<{ 
+    url: string | null; 
+    name: string; 
+    mimeType: string; 
+    id?: string; 
+    type?: string;
+    fileObj: any;
+  }>({
+    url: null,
+    name: '',
+    mimeType: '',
+    fileObj: null
+  });
 
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
 
@@ -122,15 +139,91 @@ export default function VaultPage() {
           };
           await deleteAcademicItem(file.mongodbId, user?.uid || '', typeMap[type]);
         }
-        // Always delete from Firestore
-        await deleteDoc(doc(db, getCollectionName(type), id));
       }
+      // Always delete from Firestore to ensure real-time UI update
+      await deleteDoc(doc(db, getCollectionName(type), id));
       
       toast.success('File removed from vault', { id: toastId });
 
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || 'Failed to delete file', { id: toastId });
+    }
+  };
+
+  const handleOpenViewer = async (file: any) => {
+    setViewerData({
+      url: file.url || null,
+      name: file.title || file.subject || 'Document',
+      mimeType: file.mimeType || 'application/pdf',
+      id: file.id,
+      type: file._type,
+      fileObj: file
+    });
+    setViewerOpen(true);
+
+    if (!file.url && file.mongodbId) {
+      try {
+        let result;
+        if (file._type === 'MATERIALS') {
+          result = await downloadMaterial(file.mongodbId);
+        } else {
+          const typeMap: Record<string, 'RESEARCH' | 'QUESTION' | 'MODEL'> = {
+            'RESEARCH_PAPERS': 'RESEARCH',
+            'QUESTION_PAPERS': 'QUESTION',
+            'MODEL_PAPERS': 'MODEL'
+          };
+          result = await downloadAcademicItem(file.mongodbId, typeMap[file._type]);
+        }
+        if ('content' in result) {
+          const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
+          const url = window.URL.createObjectURL(blob);
+          setViewerData(prev => ({ ...prev, url, mimeType: result.mimeType }));
+        } else {
+          setViewerData(prev => ({ ...prev, url: result.url, mimeType: result.mimeType }));
+        }
+      } catch (err) {
+        toast.error('Failed to load preview');
+        setViewerOpen(false);
+      }
+    }
+  };
+
+  const handleDownload = async (file: any) => {
+    if (!file) return;
+    const toastId = toast.loading('Downloading...');
+    try {
+      let result;
+      if (file.url) {
+        window.open(file.url, '_blank');
+        toast.dismiss(toastId);
+        return;
+      }
+      if (file._type === 'MATERIALS') {
+        result = await downloadMaterial(file.mongodbId);
+      } else {
+        const typeMap: Record<string, 'RESEARCH' | 'QUESTION' | 'MODEL'> = {
+          'RESEARCH_PAPERS': 'RESEARCH',
+          'QUESTION_PAPERS': 'QUESTION',
+          'MODEL_PAPERS': 'MODEL'
+        };
+        result = await downloadAcademicItem(file.mongodbId, typeMap[file._type]);
+      }
+      if ('content' in result) {
+        const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.title || file.subject || 'document';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+      } else {
+        window.open(result.url, '_blank');
+      }
+      toast.success('Download started!', { id: toastId });
+    } catch (err) {
+      toast.error('Download failed', { id: toastId });
     }
   };
 
@@ -266,7 +359,7 @@ export default function VaultPage() {
 
                <div className="flex items-center gap-3 shrink-0 relative z-10">
                   <button 
-                    onClick={() => window.open(file.url, '_blank')}
+                    onClick={() => handleOpenViewer(file)}
                     className="h-14 px-6 rounded-2xl bg-background border border-border flex items-center justify-center gap-2 hover:bg-secondary transition-all text-sm font-bold text-foreground active:scale-95"
                   >
                     <Eye className="h-5 w-5" />
@@ -284,6 +377,18 @@ export default function VaultPage() {
           ))}
         </div>
       )}
+
+      <FileViewerModal
+        isOpen={viewerOpen}
+        onClose={() => {
+          if (viewerData.url?.startsWith('blob:')) window.URL.revokeObjectURL(viewerData.url);
+          setViewerOpen(false);
+        }}
+        fileUrl={viewerData.url}
+        fileName={viewerData.name}
+        mimeType={viewerData.mimeType}
+        onDownload={() => handleDownload(viewerData.fileObj)}
+      />
     </div>
   );
 }

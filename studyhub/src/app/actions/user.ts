@@ -34,6 +34,32 @@ export async function decrementContribution(firebaseUid: string) {
   }
 }
 
+export async function incrementDownloads(firebaseUid: string) {
+  try {
+    const userDocRef = doc(db, 'users', firebaseUid);
+    await setDoc(userDocRef, {
+      totalDownloads: increment(1)
+    }, { merge: true });
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error incrementing downloads:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function decrementDownloads(firebaseUid: string) {
+  try {
+    const userDocRef = doc(db, 'users', firebaseUid);
+    await setDoc(userDocRef, {
+      totalDownloads: increment(-1)
+    }, { merge: true });
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error decrementing downloads:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 export async function syncUser(data: {
   firebaseUid: string;
   email: string;

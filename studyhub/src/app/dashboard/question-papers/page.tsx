@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { GraduationCap, Plus, Search, Table, Download, Calendar, BookOpen, Loader2, X, Eye } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { incrementContribution } from '@/app/actions/user';
+import { incrementContribution, incrementDownloads } from '@/app/actions/user';
 import { db, storage } from '@/lib/firebase';
 import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { toast } from 'react-hot-toast';
 import { createQuestionPaper } from '@/app/actions/academic';
+import FileViewerModal from '@/components/FileViewerModal';
 
 
 export default function QuestionPapersPage() {
@@ -26,6 +27,10 @@ export default function QuestionPapersPage() {
   const [type, setType] = useState('Regular');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // File Viewer State
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerData, setViewerData] = useState({ url: '', name: '', mimeType: 'application/pdf' });
 
   const [snapshot, loading, error] = useCollection(
     query(collection(db, 'question_papers'), orderBy('createdAt', 'desc'))
@@ -101,6 +106,16 @@ export default function QuestionPapersPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleOpenViewer = async (paper: any) => {
+    setViewerData({
+      url: paper.url,
+      name: paper.subject,
+      mimeType: paper.url.includes('.pdf') ? 'application/pdf' : 'image/jpeg'
+    });
+    setViewerOpen(true);
+    if (paper.userId) await incrementDownloads(paper.userId);
   };
 
   return (
@@ -186,7 +201,7 @@ export default function QuestionPapersPage() {
                       </span>
                     </td>
                     <td className="px-8 py-6 text-right flex items-center justify-end gap-2">
-                       <button onClick={() => window.open(paper.url, '_blank')} className="h-10 w-10 rounded-xl bg-white/5 text-white border border-white/10 inline-flex items-center justify-center hover:bg-white/10 transition-all">
+                       <button onClick={() => handleOpenViewer(paper)} className="h-10 w-10 rounded-xl bg-white/5 text-white border border-white/10 inline-flex items-center justify-center hover:bg-white/10 transition-all">
                         <Eye className="h-4 w-4" />
                       </button>
                       <button onClick={() => window.open(paper.url, '_blank')} className="h-10 w-10 rounded-xl bg-orange-600/10 text-orange-500 border border-orange-600/20 inline-flex items-center justify-center hover:bg-orange-600 hover:text-white transition-all">
@@ -274,6 +289,15 @@ export default function QuestionPapersPage() {
           </div>
         </div>
       )}
+
+      <FileViewerModal 
+        isOpen={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        fileUrl={viewerData.url}
+        fileName={viewerData.name}
+        mimeType={viewerData.mimeType}
+        onDownload={() => window.open(viewerData.url, '_blank')}
+      />
     </div>
   );
 }

@@ -1,5 +1,3 @@
-'use client';
-
 import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
@@ -10,6 +8,11 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
+
+export const metadata: Metadata = {
+  title: "StudyHub | Ultimate Academic Vault",
+  description: "Share and discover academic resources with ease.",
+};
 
 export default function RootLayout({
   children,

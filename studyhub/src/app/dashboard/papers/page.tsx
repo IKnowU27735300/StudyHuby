@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { FileText, Plus, Search, Filter, Download, ExternalLink, ScrollText, Loader2, X, Eye } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { incrementContribution } from '@/app/actions/user';
+import { incrementContribution, incrementDownloads } from '@/app/actions/user';
 import { db, storage } from '@/lib/firebase';
 import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { toast } from 'react-hot-toast';
 import { createResearchPaper } from '@/app/actions/academic';
+import FileViewerModal from '@/components/FileViewerModal';
 
 
 export default function ResearchPapersPage() {
@@ -26,6 +27,10 @@ export default function ResearchPapersPage() {
   const [tags, setTags] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // File Viewer State
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerData, setViewerData] = useState({ url: '', name: '', mimeType: 'application/pdf' });
 
   const [snapshot, loading, error] = useCollection(
     query(collection(db, 'research_papers'), orderBy('createdAt', 'desc'))
@@ -100,6 +105,16 @@ export default function ResearchPapersPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleOpenViewer = async (paper: any) => {
+    setViewerData({
+      url: paper.url,
+      name: paper.title,
+      mimeType: paper.url.includes('.pdf') ? 'application/pdf' : 'image/jpeg'
+    });
+    setViewerOpen(true);
+    if (paper.userId) await incrementDownloads(paper.userId);
   };
 
   const formatFileSize = (bytes: number) => {
@@ -195,7 +210,7 @@ export default function ResearchPapersPage() {
               </div>
 
               <div className="xl:w-64 flex flex-col gap-3 justify-center border-t border-white/5 xl:border-none pt-6 xl:pt-0">
-                <button onClick={() => window.open(paper.url, '_blank')} className="h-14 w-full rounded-2xl bg-white text-slate-950 font-bold flex items-center justify-center gap-3 shadow-xl hover:bg-slate-100 transition-colors">
+                <button onClick={() => handleOpenViewer(paper)} className="h-14 w-full rounded-2xl bg-white text-slate-950 font-bold flex items-center justify-center gap-3 shadow-xl hover:bg-slate-100 transition-colors">
                   <Eye className="h-5 w-5" />
                   View Full Document
                 </button>
@@ -274,6 +289,15 @@ export default function ResearchPapersPage() {
           </div>
         </div>
       )}
+
+      <FileViewerModal 
+        isOpen={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        fileUrl={viewerData.url}
+        fileName={viewerData.name}
+        mimeType={viewerData.mimeType}
+        onDownload={() => window.open(viewerData.url, '_blank')}
+      />
     </div>
   );
 }
