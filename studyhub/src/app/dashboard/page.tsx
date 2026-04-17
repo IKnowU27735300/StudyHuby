@@ -229,7 +229,24 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <button 
-                        onClick={() => window.open(data.url, '_blank')}
+                        onClick={async () => {
+                          if (data.url) {
+                            window.open(data.url, '_blank');
+                          } else if (data._type === 'MATERIALS') {
+                            // Handle preview for MongoDB materials
+                            const toastId = toast.loading('Opening preview...');
+                            try {
+                              const result = await downloadMaterial(data.id);
+                              const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
+                              const url = window.URL.createObjectURL(blob);
+                              window.open(url, '_blank');
+                              setTimeout(() => window.URL.revokeObjectURL(url), 10000); // Clean up after 10s
+                              toast.dismiss(toastId);
+                            } catch (err) {
+                              toast.error('Failed to open preview', { id: toastId });
+                            }
+                          }
+                        }}
                         className="h-10 px-4 rounded-xl bg-background border border-border text-foreground text-xs font-bold hover:bg-muted transition-colors flex items-center gap-2"
                       >
                         <Eye className="h-4 w-4" /> View

@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { deleteMaterial } from '@/app/actions/materials';
+import { deleteAcademicItem } from '@/app/actions/academic';
+
 
 export default function VaultPage() {
   const { user } = useAuth();
@@ -104,13 +106,28 @@ export default function VaultPage() {
     const toastId = toast.loading('Deleting file...');
     try {
       if (type === 'MATERIALS') {
-        await deleteMaterial(id, user?.uid || '');
+        // Study Materials use the mongodbId stored in the Firestore index
+        const file = myFiles.find(f => f.id === id);
+        if (file?.mongodbId) {
+          await deleteMaterial(file.mongodbId, user?.uid || '');
+        }
       } else {
-        // Direct Firestore delete for other types (since they don't have MongoDB records yet or separate actions)
+        // Research, Question, and Model Papers
+        const file = myFiles.find(f => f.id === id);
+        if (file?.mongodbId) {
+          const typeMap: Record<string, 'RESEARCH' | 'QUESTION' | 'MODEL'> = {
+            'RESEARCH_PAPERS': 'RESEARCH',
+            'QUESTION_PAPERS': 'QUESTION',
+            'MODEL_PAPERS': 'MODEL'
+          };
+          await deleteAcademicItem(file.mongodbId, user?.uid || '', typeMap[type]);
+        }
+        // Always delete from Firestore
         await deleteDoc(doc(db, getCollectionName(type), id));
       }
       
       toast.success('File removed from vault', { id: toastId });
+
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || 'Failed to delete file', { id: toastId });

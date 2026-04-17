@@ -9,6 +9,8 @@ import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/fi
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { toast } from 'react-hot-toast';
+import { createModelPaper } from '@/app/actions/academic';
+
 
 export default function ModelPapersPage() {
   const { user } = useAuth();
@@ -46,6 +48,20 @@ export default function ModelPapersPage() {
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
 
+      // 1. Sync to MongoDB first to get the ID
+      const mongoResult = await createModelPaper({
+        firebaseUid: user.uid,
+        subject,
+        code: 'MODEL',
+        year: new Date().getFullYear(),
+        semester: 1,
+        branch: 'General',
+        college: user.displayName || 'Universal Campus',
+        url,
+        tags: [subject, 'Model Paper']
+      });
+
+      // 2. Save to Firestore with MongoDB ID reference
       await addDoc(collection(db, 'model_papers'), {
         title,
         subject,
@@ -54,9 +70,12 @@ export default function ModelPapersPage() {
         fileName: file.name,
         size: file.size,
         userId: user.uid,
+        mongodbId: mongoResult.id, // Linked ID
         uploader: user.displayName || 'Learner',
         createdAt: serverTimestamp()
       });
+
+
 
       await incrementContribution(user.uid);
 

@@ -9,6 +9,8 @@ import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/fi
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { toast } from 'react-hot-toast';
+import { createQuestionPaper } from '@/app/actions/academic';
+
 
 export default function QuestionPapersPage() {
   const { user } = useAuth();
@@ -51,6 +53,20 @@ export default function QuestionPapersPage() {
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
 
+      // 1. Sync to MongoDB first to get the ID
+      const mongoResult = await createQuestionPaper({
+        firebaseUid: user.uid,
+        subject,
+        code: code.toUpperCase(),
+        year: parseInt(year),
+        semester: parseInt(semester),
+        branch,
+        college: user.displayName || 'Universal Campus',
+        url,
+        tags: [branch, code.toUpperCase()]
+      });
+
+      // 2. Save to Firestore with MongoDB ID reference
       await addDoc(collection(db, 'question_papers'), {
         subject,
         code: code.toUpperCase(),
@@ -62,9 +78,12 @@ export default function QuestionPapersPage() {
         fileName: file.name,
         size: file.size,
         userId: user.uid,
+        mongodbId: mongoResult.id, // Linked ID
         uploader: user.displayName || 'Learner',
         createdAt: serverTimestamp()
       });
+
+
 
       await incrementContribution(user.uid);
 
