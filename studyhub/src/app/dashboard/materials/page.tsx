@@ -86,6 +86,10 @@ export default function MaterialsPage() {
       formData.append('file', file);
 
       const result = await uploadMaterial(formData);
+      
+      if (!result.success) {
+        throw new Error(result.error);
+      }
 
       // 2. Index in Firestore for real-time counters (Done on client to ensure access)
       await addDoc(collection(db, 'material_index'), {

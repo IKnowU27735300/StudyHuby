@@ -51,7 +51,7 @@ export async function uploadMaterial(formData: FormData) {
     return { success: true, id: mongoResult.id, title, subject };
   } catch (error: any) {
     console.error("Upload failed in MongoDB:", error);
-    throw new Error(error.message);
+    return { success: false, error: error.message || 'Unknown database error' };
   }
 }
 
