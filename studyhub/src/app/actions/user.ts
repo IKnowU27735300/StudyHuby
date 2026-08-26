@@ -99,6 +99,38 @@ export async function syncUser(data: {
   }
 }
 
+export async function updateUserOnboarding(data: {
+  firebaseUid: string;
+  college: string;
+  course: string;
+  semester: number;
+  academicYear: string;
+  registrationNo: string;
+}) {
+  try {
+    const user = await prisma.user.findFirst({
+      where: { firebaseUid: data.firebaseUid } as any
+    });
+
+    if (user) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          college: data.college,
+          course: data.course,
+          semester: data.semester,
+          academicYear: data.academicYear,
+          registrationNo: data.registrationNo,
+        }
+      });
+    }
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error updating user onboarding in MongoDB:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 export async function searchUsers(query: string) {
   try {
     const users = await prisma.user.findMany({

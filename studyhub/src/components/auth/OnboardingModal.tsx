@@ -3,11 +3,14 @@
 import { useAuth } from "@/context/AuthContext";
 import { useState } from "react";
 import { db } from "@/lib/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { toast } from "react-hot-toast";
+import { updateUserOnboarding } from "@/app/actions/user";
+import { useRouter } from "next/navigation";
 
 export default function OnboardingModal() {
   const { user, profile, loading: authLoading, isOnboardingComplete } = useAuth();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     college: '',
@@ -24,14 +27,26 @@ export default function OnboardingModal() {
     setLoading(true);
     try {
       const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
+      await setDoc(userDocRef, {
         ...formData,
-        updatedAt: new Date()
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // Sync onboarding info to MongoDB
+      await updateUserOnboarding({
+        firebaseUid: user.uid,
+        college: formData.college,
+        course: formData.course,
+        semester: formData.semester,
+        academicYear: formData.academicYear,
+        registrationNo: formData.registrationNo
       });
+
       toast.success("Welcome to StudyHub!");
-      window.location.reload(); // Refresh to update context
-    } catch (error) {
-      toast.error("Something went wrong. Please try again.");
+      router.push('/dashboard');
+    } catch (error: any) {
+      console.error("Onboarding error:", error);
+      toast.error(error.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }

@@ -91,12 +91,18 @@ export default function MaterialsPage() {
         throw new Error(result.error);
       }
 
-      // 2. Index in Firestore for real-time counters (Done on client to ensure access)
+      // 2. Index in Firestore for real-time counters & discovery by other users
       await addDoc(collection(db, 'material_index'), {
-        fileName: result.title,
-        category: result.subject,
+        title: result.title,
+        fileName: file.name,
+        subject: subject,
+        category: subject,
+        subjectCode: code.toUpperCase(),
+        year: parseInt(year),
+        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
         mongodbId: result.id,
         userId: user.uid,
+        uploader: user.displayName || 'Learner',
         size: file.size,
         createdAt: serverTimestamp(),
       });
@@ -180,11 +186,12 @@ export default function MaterialsPage() {
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   };
 
-  const filteredMaterials = (materials || []).filter(m => 
-    m.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    m.subject?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.subjectCode?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMaterials = (materials || []).filter(m => {
+    const titleMatch = (m.title || m.fileName || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const subjectMatch = (m.subject || m.category || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const codeMatch = (m.subjectCode || '').toLowerCase().includes(searchTerm.toLowerCase());
+    return titleMatch || subjectMatch || codeMatch;
+  });
 
   return (
     <div className="flex flex-col gap-8 relative">
@@ -240,21 +247,25 @@ export default function MaterialsPage() {
                   <div className="p-3 rounded-2xl bg-primary/10 text-primary border border-primary/20">
                     <BookOpen className="h-6 w-6" />
                   </div>
-                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground border border-border px-2 py-1 rounded">
-                    {material.subjectCode}
-                  </div>
+                  {material.subjectCode && (
+                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground border border-border px-2 py-1 rounded">
+                      {material.subjectCode}
+                    </div>
+                  )}
                 </div>
                 
                 <h3 className="text-xl font-bold text-foreground mb-2 group-hover:text-primary transition-colors leading-tight line-clamp-2">
-                  {material.title}
+                  {material.title || material.fileName}
                 </h3>
-                <p className="text-sm text-muted-foreground mb-6 font-medium line-clamp-1">{material.subject}</p>
+                <p className="text-sm text-muted-foreground mb-6 font-medium line-clamp-1">{material.subject || material.category}</p>
 
                 <div className="flex flex-col gap-3 mb-6">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-                    <Calendar className="h-3.5 w-3.5" />
-                    Year {material.year}
-                  </div>
+                  {material.year && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                      <Calendar className="h-3.5 w-3.5" />
+                      Year {material.year}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium text-primary">
                     <ShieldCheck className="h-3.5 w-3.5" />
                     Saved in MongoDB
@@ -280,15 +291,15 @@ export default function MaterialsPage() {
                   <Eye className="h-5 w-5 group-hover:scale-110 transition-transform" />
                 </button>
                 <button 
-                  onClick={() => handleDownload(material.id, material.title)}
+                  onClick={() => handleDownload(material.mongodbId || material.id, material.title || material.fileName)}
                   className="flex-1 h-12 rounded-xl bg-primary text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors"
                 >
                   <Download className="h-4 w-4" />
                   Download
                 </button>
-                {material.user?.firebaseUid === user?.uid && (
+                {(material.userId === user?.uid || material.user?.firebaseUid === user?.uid) && (
                   <button 
-                    onClick={() => handleDelete(material.id, material.title)}
+                    onClick={() => handleDelete(material.mongodbId || material.id, material.title || material.fileName)}
                     className="h-12 w-12 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
                     title="Delete Material"
                   >
