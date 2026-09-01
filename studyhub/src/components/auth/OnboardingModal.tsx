@@ -7,6 +7,7 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { toast } from "react-hot-toast";
 import { updateUserOnboarding } from "@/app/actions/user";
 import { useRouter } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 
 export default function OnboardingModal() {
   const { user, loading: authLoading, isOnboardingComplete } = useAuth();
@@ -55,7 +56,7 @@ export default function OnboardingModal() {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-md">
-      <div className="glass w-full max-w-xl rounded-[2.5rem] p-10 border border-border bg-card shadow-2xl animate-in fade-in zoom-in duration-300">
+      <div className="glass w-full max-w-xl rounded-[2.5rem] p-10 border border-border bg-card shadow-2xl animate-in fade-in zoom-in duration-200">
         <div className="text-center mb-10">
           <h2 className="text-3xl font-black font-outfit text-foreground mb-2">Let&apos;s get started! 🎓</h2>
           <p className="text-muted-foreground text-sm">We just need a few details to personalize your experience.</p>
@@ -68,9 +69,9 @@ export default function OnboardingModal() {
               required
               type="text"
               placeholder="e.g. Stanford University"
-              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
+              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors duration-150"
               value={formData.college}
-              onChange={(e) => setFormData({...formData, college: e.target.value})}
+              onChange={(e) => setFormData(prev => ({ ...prev, college: e.target.value }))}
             />
           </div>
 
@@ -80,9 +81,9 @@ export default function OnboardingModal() {
               required
               type="text"
               placeholder="e.g. B.Tech CSE"
-              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
+              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors duration-150"
               value={formData.course}
-              onChange={(e) => setFormData({...formData, course: e.target.value})}
+              onChange={(e) => setFormData(prev => ({ ...prev, course: e.target.value }))}
             />
           </div>
 
@@ -92,39 +93,45 @@ export default function OnboardingModal() {
               required
               type="text"
               placeholder="Roll Number"
-              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
+              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors duration-150"
               value={formData.registrationNo}
-              onChange={(e) => setFormData({...formData, registrationNo: e.target.value})}
+              onChange={(e) => setFormData(prev => ({ ...prev, registrationNo: e.target.value }))}
             />
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-black uppercase tracking-widest text-muted-foreground ml-2">Semester</label>
-            <select
-              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all appearance-none"
-              value={formData.semester}
-              onChange={(e) => setFormData({...formData, semester: parseInt(e.target.value)})}
-            >
-              {[1, 2, 3, 4, 5, 6, 7, 8].map(s => <option key={s} value={s} className="bg-card text-foreground">Semester {s}</option>)}
-            </select>
+            <div className="relative">
+              <select
+                className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 pr-10 text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors duration-150 appearance-none cursor-pointer"
+                value={formData.semester}
+                onChange={(e) => setFormData(prev => ({ ...prev, semester: parseInt(e.target.value) }))}
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(s => <option key={s} value={s} className="bg-card text-foreground">Semester {s}</option>)}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground pointer-events-none" />
+            </div>
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-black uppercase tracking-widest text-muted-foreground ml-2">Academic Year</label>
-            <select
-              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all appearance-none"
-              value={formData.academicYear}
-              onChange={(e) => setFormData({...formData, academicYear: e.target.value})}
-            >
-              <option value="2024-25" className="bg-card text-foreground">2024-25</option>
-              <option value="2023-24" className="bg-card text-foreground">2023-24</option>
-            </select>
+            <div className="relative">
+              <select
+                className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 pr-10 text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors duration-150 appearance-none cursor-pointer"
+                value={formData.academicYear}
+                onChange={(e) => setFormData(prev => ({ ...prev, academicYear: e.target.value }))}
+              >
+                <option value="2024-25" className="bg-card text-foreground">2024-25</option>
+                <option value="2023-24" className="bg-card text-foreground">2023-24</option>
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground pointer-events-none" />
+            </div>
           </div>
 
           <button
             disabled={loading}
             type="submit"
-            className="md:col-span-2 h-14 mt-4 rounded-2xl bg-primary text-primary-foreground font-bold text-lg shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            className="md:col-span-2 h-14 mt-4 rounded-2xl bg-primary text-primary-foreground font-bold text-lg shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-transform duration-150 disabled:opacity-50"
           >
             {loading ? 'Setting up Profile...' : 'Complete Onboarding'}
           </button>
