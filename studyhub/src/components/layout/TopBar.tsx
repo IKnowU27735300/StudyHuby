@@ -8,7 +8,7 @@ import { db } from '@/lib/firebase';
 import { collection, query, where, updateDoc, doc, limit } from 'firebase/firestore';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { FileText, Award, GraduationCap as QAIcon, User as UserIcon } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 
 export type SearchCategory = 'MATERIALS' | 'QUESTION_PAPERS' | 'MODEL_PAPERS' | 'RESEARCH_PAPERS' | 'ACCOUNTS';
@@ -34,34 +34,62 @@ export default function TopBar() {
   const { user, profile, loginWithGoogle, logout, loading } = useAuth();
   const { isCollapsed, toggleSidebar } = useSidebar();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [categories, setCategories] = useState<SearchCategory[]>((searchParams.get('c')?.split(',') as SearchCategory[]) || ['MATERIALS']);
-  const [searchValue, setSearchValue] = useState(searchParams.get('q') || '');
+  const [categories, setCategories] = useState<SearchCategory[]>(() => {
+    const c = searchParams.get('c');
+    return c ? (c.split(',') as SearchCategory[]) : ['MATERIALS'];
+  });
+  const [searchValue, setSearchValue] = useState(() => searchParams.get('q') || '');
+  const isFirstRender = useRef(true);
   
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
 
-  // Sync search to URL
+  // Sync state when on /dashboard and search params change
   useEffect(() => {
+    if (pathname === '/dashboard') {
+      const q = searchParams.get('q') || '';
+      const c = searchParams.get('c');
+      setSearchValue(q);
+      if (c) {
+        setCategories(c.split(',') as SearchCategory[]);
+      }
+    }
+  }, [pathname, searchParams]);
+
+  // Sync search to URL ONLY when on /dashboard OR when actively typing a query
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    // Do NOT redirect back to /dashboard if user is browsing another page and not actively searching
+    if (pathname !== '/dashboard' && !searchValue.trim()) {
+      return;
+    }
+
     const timeout = setTimeout(() => {
       const currentQ = searchParams.get('q') || '';
       const currentC = searchParams.get('c') || '';
       const targetC = categories.join(',');
       
-      if (searchValue !== currentQ || targetC !== currentC) {
+      if (searchValue !== currentQ || (pathname === '/dashboard' && targetC !== currentC)) {
         const params = new URLSearchParams();
-        if (searchValue) params.set('q', searchValue);
+        if (searchValue.trim()) params.set('q', searchValue.trim());
         if (categories.length > 0) params.set('c', targetC);
-        router.push(`/dashboard?${params.toString()}`);
+        router.replace(`/dashboard${params.toString() ? `?${params.toString()}` : ''}`);
       }
-    }, 500);
+    }, 400);
+
     return () => clearTimeout(timeout);
-  }, [searchValue, categories, router, searchParams]);
+  }, [searchValue, categories, pathname, router, searchParams]);
 
   const toggleCategory = (cat: SearchCategory) => {
     setCategories(prev => 

@@ -7,12 +7,13 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { toast } from "react-hot-toast";
 import { updateUserOnboarding } from "@/app/actions/user";
 import { useRouter } from "next/navigation";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 
 export default function OnboardingModal() {
   const { user, loading: authLoading, isOnboardingComplete } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const [formData, setFormData] = useState({
     college: '',
     course: '',
@@ -21,7 +22,7 @@ export default function OnboardingModal() {
     registrationNo: ''
   });
 
-  if (authLoading || !user || isOnboardingComplete) return null;
+  if (authLoading || !user || isOnboardingComplete || dismissed) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +45,7 @@ export default function OnboardingModal() {
       });
 
       toast.success("Welcome to StudyHub!");
-      router.push('/dashboard');
+      setDismissed(true);
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
       console.error("Onboarding error:", msg);
@@ -56,7 +57,16 @@ export default function OnboardingModal() {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-md">
-      <div className="glass w-full max-w-xl rounded-[2.5rem] p-10 border border-border bg-card shadow-2xl animate-in fade-in zoom-in duration-200">
+      <div className="glass w-full max-w-xl rounded-[2.5rem] p-10 border border-border bg-card shadow-2xl animate-in fade-in zoom-in duration-200 relative">
+        <button 
+          type="button"
+          onClick={() => setDismissed(true)} 
+          className="absolute top-6 right-6 p-2 rounded-full hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+          title="Skip for now"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
         <div className="text-center mb-10">
           <h2 className="text-3xl font-black font-outfit text-foreground mb-2">Let&apos;s get started! 🎓</h2>
           <p className="text-muted-foreground text-sm">We just need a few details to personalize your experience.</p>
@@ -131,9 +141,17 @@ export default function OnboardingModal() {
           <button
             disabled={loading}
             type="submit"
-            className="md:col-span-2 h-14 mt-4 rounded-2xl bg-primary text-primary-foreground font-bold text-lg shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-transform duration-150 disabled:opacity-50"
+            className="md:col-span-2 h-14 mt-4 rounded-2xl bg-primary text-primary-foreground font-bold text-lg shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-transform duration-150 disabled:opacity-50 cursor-pointer"
           >
             {loading ? 'Setting up Profile...' : 'Complete Onboarding'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setDismissed(true)}
+            className="md:col-span-2 text-center text-xs font-bold text-muted-foreground hover:text-foreground transition-colors py-1 cursor-pointer"
+          >
+            Skip for now & explore as guest
           </button>
         </form>
       </div>
