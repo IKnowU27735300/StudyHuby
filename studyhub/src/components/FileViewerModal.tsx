@@ -1,7 +1,7 @@
 
 'use client';
 
-import { X, Maximize2, Download, Loader2 } from 'lucide-react';
+import { X, Maximize2, Download, Loader2, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface FileViewerModalProps {
@@ -34,23 +34,23 @@ export default function FileViewerModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+          className="absolute inset-0 bg-background/80 backdrop-blur-md"
         />
         
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-5xl h-[85vh] bg-card border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col"
+          className="relative w-full max-w-5xl h-[85vh] bg-card border border-border rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col"
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-white/5 bg-secondary/30">
+          <div className="flex items-center justify-between p-6 border-b border-border bg-secondary/30">
             <div className="flex items-center gap-4">
               <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
                 <Maximize2 className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-white line-clamp-1">{fileName}</h3>
+                <h3 className="text-lg font-black text-foreground line-clamp-1">{fileName}</h3>
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{mimeType.split('/')[1] || 'File'} Document</p>
               </div>
             </div>
@@ -59,7 +59,7 @@ export default function FileViewerModal({
               {onDownload && (
                 <button
                   onClick={onDownload}
-                  className="h-11 px-4 rounded-xl bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white transition-all transition-colors flex items-center gap-2 text-xs font-bold"
+                  className="h-11 px-4 rounded-xl bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white transition-all flex items-center gap-2 text-xs font-bold"
                 >
                   <Download className="h-4 w-4" />
                   <span className="hidden sm:inline">Save Copy</span>
@@ -67,7 +67,7 @@ export default function FileViewerModal({
               )}
               <button
                 onClick={onClose}
-                className="h-11 w-11 rounded-xl bg-white/5 border border-white/10 text-white hover:bg-rose-500 hover:border-rose-500 transition-all flex items-center justify-center group"
+                className="h-11 w-11 rounded-xl bg-secondary border border-border text-foreground hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-all flex items-center justify-center group"
               >
                 <X className="h-5 w-5 group-hover:scale-110 transition-transform" />
               </button>
@@ -75,7 +75,7 @@ export default function FileViewerModal({
           </div>
 
           {/* Content */}
-          <div className="flex-1 bg-slate-900/50 relative">
+          <div className="flex-1 bg-background/50 relative">
             {!fileUrl ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
                 <Loader2 className="h-10 w-10 text-primary animate-spin" />
@@ -98,8 +98,8 @@ export default function FileViewerModal({
                     />
                   </div>
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center p-12 text-center text-white">
-                    <div className="h-20 w-20 rounded-3xl bg-secondary mb-6 flex items-center justify-center border border-white/10 shadow-inner">
+                  <div className="w-full h-full flex flex-col items-center justify-center p-12 text-center text-foreground">
+                    <div className="h-20 w-20 rounded-3xl bg-secondary mb-6 flex items-center justify-center border border-border shadow-inner">
                       <Download className="h-10 w-10 text-muted-foreground" />
                     </div>
                     <h4 className="text-xl font-black mb-2">Preview Unavailable</h4>
@@ -108,7 +108,7 @@ export default function FileViewerModal({
                     </p>
                     <button
                       onClick={onDownload}
-                      className="px-8 py-4 rounded-2xl bg-white text-slate-950 font-black hover:bg-slate-200 transition-all shadow-xl shadow-white/5"
+                      className="px-8 py-4 rounded-2xl bg-primary text-primary-foreground font-black hover:bg-primary/90 transition-all shadow-xl shadow-primary/20"
                     >
                       Download Now
                     </button>
@@ -119,7 +119,7 @@ export default function FileViewerModal({
           </div>
           
           {/* Footer Info */}
-          <div className="p-4 bg-secondary/20 border-t border-white/5 flex items-center justify-center">
+          <div className="p-4 bg-secondary/20 border-t border-border flex items-center justify-center">
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] flex items-center gap-2">
               <ShieldCheck className="h-3 w-3 text-emerald-500" />
               Securely rendered via StudyHub Vault
@@ -130,5 +130,3 @@ export default function FileViewerModal({
     </AnimatePresence>
   );
 }
-
-import { ShieldCheck } from 'lucide-react';

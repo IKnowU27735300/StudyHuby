@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Search, Bell, User, ChevronDown, LogIn, LogOut, Settings, Menu, ChevronLeft, Loader2, Check, Filter, BookOpen, Code2 } from 'lucide-react';
+import { Search, Bell, User, ChevronDown, LogIn, LogOut, Settings, Menu, ChevronLeft, Check, Filter, BookOpen, Code2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useSidebar } from '@/context/SidebarContext';
 import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, updateDoc, doc, limit } from 'firebase/firestore';
+import { collection, query, where, updateDoc, doc, limit } from 'firebase/firestore';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { FileText, Award, GraduationCap as QAIcon, User as UserIcon } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -13,7 +13,16 @@ import Link from 'next/link';
 
 export type SearchCategory = 'MATERIALS' | 'QUESTION_PAPERS' | 'MODEL_PAPERS' | 'RESEARCH_PAPERS' | 'ACCOUNTS';
 
-const CATEGORIES: { label: string; value: SearchCategory; icon: any }[] = [
+interface NotificationDoc {
+  id: string;
+  userId: string;
+  type?: string;
+  message: string;
+  read: boolean;
+  createdAt?: { seconds: number; nanoseconds: number } | null;
+}
+
+const CATEGORIES: { label: string; value: SearchCategory; icon: React.ComponentType<{ className?: string }> }[] = [
   { label: 'Study Material', value: 'MATERIALS', icon: BookOpen },
   { label: 'Question Paper', value: 'QUESTION_PAPERS', icon: QAIcon },
   { label: 'Model Paper', value: 'MODEL_PAPERS', icon: Award },
@@ -40,15 +49,19 @@ export default function TopBar() {
   // Sync search to URL
   useEffect(() => {
     const timeout = setTimeout(() => {
-      if (searchValue !== searchParams.get('q') || categories.join(',') !== searchParams.get('c')) {
+      const currentQ = searchParams.get('q') || '';
+      const currentC = searchParams.get('c') || '';
+      const targetC = categories.join(',');
+      
+      if (searchValue !== currentQ || targetC !== currentC) {
         const params = new URLSearchParams();
         if (searchValue) params.set('q', searchValue);
-        if (categories.length > 0) params.set('c', categories.join(','));
+        if (categories.length > 0) params.set('c', targetC);
         router.push(`/dashboard?${params.toString()}`);
       }
     }, 500);
     return () => clearTimeout(timeout);
-  }, [searchValue, categories]);
+  }, [searchValue, categories, router, searchParams]);
 
   const toggleCategory = (cat: SearchCategory) => {
     setCategories(prev => 
@@ -62,19 +75,25 @@ export default function TopBar() {
     user ? query(
       collection(db, 'notifications'),
       where('userId', 'in', [user.uid, 'GLOBAL_ALERTS']),
-      orderBy('createdAt', 'desc'),
-      limit(15)
+      limit(25)
     ) : null
   );
 
-  const notifications = notifValue?.docs.map(doc => ({ id: doc.id, ...doc.data() } as any)) || [];
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const notifications: NotificationDoc[] = (notifValue?.docs.map(doc => ({ id: doc.id, ...doc.data() } as NotificationDoc)) || [])
+    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+    .slice(0, 15);
+
+  const unreadCount = notifications.filter(n => !n.read && n.userId === user?.uid).length;
 
   const markAllAsRead = async () => {
     if (!user) return;
     notifications.forEach(async (n) => {
-      if (!n.read) {
-        await updateDoc(doc(db, 'notifications', n.id), { read: true });
+      if (!n.read && n.userId === user.uid) {
+        try {
+          await updateDoc(doc(db, 'notifications', n.id), { read: true });
+        } catch {
+          // Ignore if permission denied
+        }
       }
     });
   };

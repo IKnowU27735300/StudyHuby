@@ -13,17 +13,13 @@ export async function createResearchPaper(data: {
   url: string;
 }) {
   try {
-    console.log("Creating ResearchPaper for user:", data.firebaseUid);
     const mongoUser = await prisma.user.findFirst({
-      where: { firebaseUid: data.firebaseUid } as any
+      where: { firebaseUid: data.firebaseUid }
     });
 
     if (!mongoUser) {
-      console.error("User not found in MongoDB for Firebase UID:", data.firebaseUid);
       throw new Error("User profile not synced. Please refresh the page.");
     }
-
-    console.log("Found MongoDB User:", mongoUser.id);
 
     const result = await prisma.researchPaper.create({
       data: {
@@ -38,14 +34,13 @@ export async function createResearchPaper(data: {
       }
     });
 
-    console.log("ResearchPaper created successfully:", result.id);
     return { success: true, id: String(result.id) };
-  } catch (error: any) {
-    console.error("Failed to create ResearchPaper in MongoDB:", error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed to create Research Paper";
+    console.error("Failed to create ResearchPaper in MongoDB:", msg);
+    return { success: false, error: msg };
   }
 }
-
 
 export async function createQuestionPaper(data: {
   firebaseUid: string;
@@ -59,13 +54,11 @@ export async function createQuestionPaper(data: {
   tags: string[];
 }) {
   try {
-    console.log("Creating QuestionPaper for user:", data.firebaseUid);
     const mongoUser = await prisma.user.findFirst({
-      where: { firebaseUid: data.firebaseUid } as any
+      where: { firebaseUid: data.firebaseUid }
     });
 
     if (!mongoUser) {
-      console.error("User not found in MongoDB for Firebase UID:", data.firebaseUid);
       throw new Error("User profile not synced. Please refresh the page.");
     }
 
@@ -83,14 +76,13 @@ export async function createQuestionPaper(data: {
       }
     });
 
-    console.log("QuestionPaper created successfully:", result.id);
     return { success: true, id: String(result.id) };
-  } catch (error: any) {
-    console.error("Failed to create QuestionPaper in MongoDB:", error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed to create Question Paper";
+    console.error("Failed to create QuestionPaper in MongoDB:", msg);
+    return { success: false, error: msg };
   }
 }
-
 
 export async function createModelPaper(data: {
   firebaseUid: string;
@@ -104,13 +96,11 @@ export async function createModelPaper(data: {
   tags: string[];
 }) {
   try {
-    console.log("Creating ModelPaper for user:", data.firebaseUid);
     const mongoUser = await prisma.user.findFirst({
-      where: { firebaseUid: data.firebaseUid } as any
+      where: { firebaseUid: data.firebaseUid }
     });
 
     if (!mongoUser) {
-      console.error("User not found in MongoDB for Firebase UID:", data.firebaseUid);
       throw new Error("User profile not synced. Please refresh the page.");
     }
 
@@ -128,71 +118,83 @@ export async function createModelPaper(data: {
       }
     });
 
-    console.log("ModelPaper created successfully:", result.id);
     return { success: true, id: String(result.id) };
-  } catch (error: any) {
-    console.error("Failed to create ModelPaper in MongoDB:", error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed to create Model Paper";
+    console.error("Failed to create ModelPaper in MongoDB:", msg);
+    return { success: false, error: msg };
   }
 }
 
-
 export async function deleteAcademicItem(id: string, firebaseUid: string, type: 'RESEARCH' | 'QUESTION' | 'MODEL') {
   try {
-    let material: any;
-    
     switch(type) {
-      case 'RESEARCH':
-        material = await prisma.researchPaper.findUnique({ where: { id }, include: { user: true } });
-        if (material?.user.firebaseUid !== firebaseUid) throw new Error("Unauthorized");
+      case 'RESEARCH': {
+        const material = await prisma.researchPaper.findUnique({ where: { id }, include: { user: true } });
+        if (!material || material.user.firebaseUid !== firebaseUid) throw new Error("Unauthorized");
         await prisma.researchPaper.delete({ where: { id } });
         break;
-      case 'QUESTION':
-        material = await prisma.questionPaper.findUnique({ where: { id }, include: { user: true } });
-        if (material?.user.firebaseUid !== firebaseUid) throw new Error("Unauthorized");
+      }
+      case 'QUESTION': {
+        const material = await prisma.questionPaper.findUnique({ where: { id }, include: { user: true } });
+        if (!material || material.user.firebaseUid !== firebaseUid) throw new Error("Unauthorized");
         await prisma.questionPaper.delete({ where: { id } });
         break;
-      case 'MODEL':
-        material = await prisma.modelPaper.findUnique({ where: { id }, include: { user: true } });
-        if (material?.user.firebaseUid !== firebaseUid) throw new Error("Unauthorized");
+      }
+      case 'MODEL': {
+        const material = await prisma.modelPaper.findUnique({ where: { id }, include: { user: true } });
+        if (!material || material.user.firebaseUid !== firebaseUid) throw new Error("Unauthorized");
         await prisma.modelPaper.delete({ where: { id } });
         break;
+      }
     }
 
-    console.log(`Academic item ${id} deleted successfully from MongoDB.`);
     return { success: true };
-  } catch (error: any) {
-    console.error(`Failed to delete ${type} from MongoDB:`, error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed to delete item";
+    console.error(`Failed to delete ${type} from MongoDB:`, msg);
+    return { success: false, error: msg };
   }
 }
 
 export async function downloadAcademicItem(id: string, type: 'RESEARCH' | 'QUESTION' | 'MODEL') {
   try {
-    let item: any;
+    let itemUrl = '';
+    let itemName = '';
     
     switch(type) {
-      case 'RESEARCH':
-        item = await prisma.researchPaper.findUnique({ where: { id } });
+      case 'RESEARCH': {
+        const res = await prisma.researchPaper.findUnique({ where: { id } });
+        if (!res) throw new Error("Document not found in MongoDB");
+        itemUrl = res.fileUrl;
+        itemName = res.title;
         break;
-      case 'QUESTION':
-        item = await prisma.questionPaper.findUnique({ where: { id } });
+      }
+      case 'QUESTION': {
+        const q = await prisma.questionPaper.findUnique({ where: { id } });
+        if (!q) throw new Error("Document not found in MongoDB");
+        itemUrl = q.fileUrl;
+        itemName = q.subject;
         break;
-      case 'MODEL':
-        item = await prisma.modelPaper.findUnique({ where: { id } });
+      }
+      case 'MODEL': {
+        const m = await prisma.modelPaper.findUnique({ where: { id } });
+        if (!m) throw new Error("Document not found in MongoDB");
+        itemUrl = m.fileUrl;
+        itemName = m.subject;
         break;
+      }
     }
 
-    if (!item) throw new Error("Document not found in MongoDB");
-
     return { 
-      url: item.fileUrl, 
-      fileName: item.title || item.subject,
-      mimeType: (item.fileUrl as string).includes('.pdf') ? 'application/pdf' : 'image/jpeg'
+      url: itemUrl, 
+      fileName: itemName,
+      mimeType: itemUrl.includes('.pdf') ? 'application/pdf' : 'image/jpeg'
     };
-  } catch (error: any) {
-    console.error(`Failed to fetch ${type} URL from MongoDB:`, error);
-    throw new Error(error.message);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed to download item";
+    console.error(`Failed to fetch ${type} URL from MongoDB:`, msg);
+    throw new Error(msg);
   }
 }
 

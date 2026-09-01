@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Filter, Download, Calendar, Tag, User as UserIcon, BookOpen, Search, X, Loader2, Eye, Trash2, ShieldCheck } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Filter, Download, Calendar, Tag, BookOpen, Search, X, Loader2, Eye, Trash2, ShieldCheck } from 'lucide-react';
 import FileViewerModal from '@/components/FileViewerModal';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -9,7 +9,24 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, doc, setDoc, increment, query, where, getDocs, deleteDoc, orderBy, serverTimestamp } from 'firebase/firestore';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { uploadMaterial, downloadMaterial, deleteMaterial } from '@/app/actions/materials';
-import { incrementDownloads } from '@/app/actions/user';
+import { incrementDownloads, decrementContribution } from '@/app/actions/user';
+
+interface MaterialDoc {
+  id: string;
+  mongodbId?: string;
+  title?: string;
+  fileName?: string;
+  subject?: string;
+  category?: string;
+  subjectCode?: string;
+  year?: number;
+  tags?: string[];
+  userId?: string;
+  uploader?: string;
+  size?: number;
+  mimeType?: string;
+  user?: { firebaseUid?: string };
+}
 
 export default function MaterialsPage() {
   const { user } = useAuth();
@@ -38,7 +55,7 @@ export default function MaterialsPage() {
     query(collection(db, 'material_index'), orderBy('createdAt', 'desc'))
   );
 
-  const materials = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) || [];
+  const materials: MaterialDoc[] = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) || [];
 
   const handleDelete = async (id: string, materialTitle: string) => {
     if (!user) return;
@@ -49,19 +66,18 @@ export default function MaterialsPage() {
       // 1. Delete from MongoDB & update Prisma via server
       await deleteMaterial(id, user.uid);
       
-      // 2. Clean up from Firestore index (Client has permissions)
+      // 2. Clean up from Firestore index
       const q = query(collection(db, 'material_index'), where('mongodbId', '==', id));
       const snap = await getDocs(q);
       await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
 
-      // 3. Decrement Firestore count
-      await setDoc(doc(db, 'users', user.uid), {
-        contributionCount: increment(-1)
-      }, { merge: true });
+      // 3. Decrement Firestore & user count
+      await decrementContribution(user.uid);
 
       toast.success('Material deleted successfully', { id: toastId });
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete material', { id: toastId });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete material';
+      toast.error(msg, { id: toastId });
     }
   };
 
@@ -291,7 +307,7 @@ export default function MaterialsPage() {
                   <Eye className="h-5 w-5 group-hover:scale-110 transition-transform" />
                 </button>
                 <button 
-                  onClick={() => handleDownload(material.mongodbId || material.id, material.title || material.fileName)}
+                  onClick={() => handleDownload(material.mongodbId || material.id, material.title || material.fileName || 'Document')}
                   className="flex-1 h-12 rounded-xl bg-primary text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors"
                 >
                   <Download className="h-4 w-4" />
@@ -299,7 +315,7 @@ export default function MaterialsPage() {
                 </button>
                 {(material.userId === user?.uid || material.user?.firebaseUid === user?.uid) && (
                   <button 
-                    onClick={() => handleDelete(material.mongodbId || material.id, material.title || material.fileName)}
+                    onClick={() => handleDelete(material.mongodbId || material.id, material.title || material.fileName || 'Document')}
                     className="h-12 w-12 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
                     title="Delete Material"
                   >

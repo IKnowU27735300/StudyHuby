@@ -5,20 +5,18 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from 'next-themes';
 import { db, storage } from '@/lib/firebase';
 import { doc, updateDoc, collection, query, where, deleteDoc, setDoc, increment, getDocs } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { updateProfile } from 'firebase/auth';
 import { Monitor, Moon, Sun, Save, User, HardDrive, FileText, BookOpen, GraduationCap, Award, Trash2, Camera, Loader2, Users, UserPlus } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { getUsersByFirebaseUids, incrementContribution, decrementContribution } from '@/app/actions/user';
+import { getUsersByFirebaseUids, decrementContribution, updateUserProfile } from '@/app/actions/user';
 import { deleteMaterial } from '@/app/actions/materials';
+import { deleteAcademicItem } from '@/app/actions/academic';
 import Link from 'next/link';
 
 export default function SettingsPage() {
   const { user, profile } = useAuth();
-  
-  // Storage Refresh trigger
-  const [storageRefresh, setStorageRefresh] = useState(0);
 
   const handleDeleteMaterial = async (mongodbId: string, title: string) => {
     if (!user) return;
@@ -40,31 +38,50 @@ export default function SettingsPage() {
       }, { merge: true });
 
       toast.success('Deleted successfully', { id: tid });
-    } catch (err: any) {
-      toast.error(err.message || 'Deletion failed', { id: tid });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Deletion failed';
+      toast.error(msg, { id: tid });
     }
   };
 
-  const handleGenericDelete = async (collectionName: string, docId: string, title: string) => {
+  const handleGenericDelete = async (
+    collectionName: string, 
+    docId: string, 
+    title: string, 
+    type: 'RESEARCH' | 'QUESTION' | 'MODEL',
+    mongodbId?: string,
+    fileUrl?: string
+  ) => {
     if (!user) return;
-    if (!window.confirm(`Are you sure you want to delete this resource?`)) return;
+    if (!window.confirm(`Are you sure you want to delete "${title || 'this resource'}"?`)) return;
 
     const tid = toast.loading('Removing archive...');
     try {
-      // 1. Delete from Firestore
+      // 1. Delete from MongoDB
+      if (mongodbId) {
+        await deleteAcademicItem(mongodbId, user.uid, type);
+      }
+
+      // 2. Delete blob from Firebase Storage if present
+      if (fileUrl && fileUrl.includes('firebase')) {
+        try {
+          const fileRef = ref(storage, fileUrl);
+          await deleteObject(fileRef);
+        } catch {
+          // Continue if already deleted
+        }
+      }
+
+      // 3. Delete from Firestore
       await deleteDoc(doc(db, collectionName, docId));
       
-      // 2. Decrement contribution count in Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        contributionCount: increment(-1)
-      }, { merge: true });
-
-      // 3. Decrement in MongoDB (Papers in MongoDB are handled by Prisma relation Cascades if storage URLs change, but for now we focus on sync)
+      // 4. Decrement contribution count
       await decrementContribution(user.uid); 
 
       toast.success('Removed from vault', { id: tid });
-    } catch (err: any) {
-      toast.error(err.message || 'Deletion failed', { id: tid });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Deletion failed';
+      toast.error(msg, { id: tid });
     }
   };
   const { theme, setTheme } = useTheme();
@@ -75,8 +92,14 @@ export default function SettingsPage() {
   }, []);
 
   const toggleTheme = (newTheme: string, e: React.MouseEvent) => {
-    // @ts-ignore
-    if (!document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const docWithTransition = document as Document & {
+      startViewTransition?: (callback: () => Promise<void> | void) => {
+        ready: Promise<void>;
+        finished: Promise<void>;
+      };
+    };
+
+    if (!docWithTransition.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setTheme(newTheme);
       return;
     }
@@ -90,27 +113,24 @@ export default function SettingsPage() {
 
     document.documentElement.classList.add('view-transitioning');
 
-    // @ts-ignore
-    const transition = document.startViewTransition(async () => {
+    const transition = docWithTransition.startViewTransition(async () => {
       setTheme(newTheme);
       // Wait for next-themes to apply class to html
       await new Promise(resolve => setTimeout(resolve, 50));
     });
 
     transition.ready.then(() => {
-      const clipPath = [
-        `circle(0px at ${x}px ${y}px)`,
-        `circle(${endRadius}px at ${x}px ${y}px)`,
-      ];
-      
       document.documentElement.animate(
         {
-          clipPath: newTheme === "dark" ? clipPath : [...clipPath].reverse(),
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${endRadius}px at ${x}px ${y}px)`,
+          ],
         },
         {
-          duration: 700,
-          easing: "cubic-bezier(0.4, 0, 0.2, 1)",
-          pseudoElement: newTheme === "dark" ? "::view-transition-new(root)" : "::view-transition-old(root)",
+          duration: 400,
+          easing: "ease-in-out",
+          pseudoElement: "::view-transition-new(root)",
         }
       );
     });
@@ -120,13 +140,13 @@ export default function SettingsPage() {
     });
   };
 
-  // User List Modal State
+  // Follow Modal State
   const [showUserModal, setShowUserModal] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
-  const [modalUsers, setModalUsers] = useState<any[]>([]);
+  const [modalUsers, setModalUsers] = useState<Array<{ id: string; name?: string | null; avatarUrl?: string | null; college?: string | null }>>([]);
   const [modalLoading, setModalLoading] = useState(false);
 
-  const handleOpenUserList = async (title: string, uids: string[]) => {
+  const handleOpenUserModal = async (title: string, uids: string[]) => {
     setModalTitle(title);
     setModalUsers([]);
     setShowUserModal(true);
@@ -141,7 +161,7 @@ export default function SettingsPage() {
       if (result.success) {
         setModalUsers(result.users || []);
       }
-    } catch (error) {
+    } catch {
       toast.error(`Failed to load ${title.toLowerCase()}`);
     } finally {
       setModalLoading(false);
@@ -167,8 +187,13 @@ export default function SettingsPage() {
     try {
       await updateProfile(user, { displayName: name });
       await updateDoc(doc(db, 'users', user.uid), { name });
+      await updateUserProfile({
+        firebaseUid: user.uid,
+        email: user.email || '',
+        name: name.trim()
+      });
       toast.success('Username updated successfully!');
-    } catch (error) {
+    } catch {
       toast.error('Failed to update username.');
     } finally {
       setSavingName(false);
@@ -186,7 +211,7 @@ export default function SettingsPage() {
     }
 
     setUploadingPhoto(true);
-    const toastId = toast.loading('Uploading profile video/photo...');
+    const toastId = toast.loading('Uploading profile photo...');
     
     try {
       const storageRef = ref(storage, `avatars/${user.uid}/${Date.now()}_${file.name}`);
@@ -194,7 +219,12 @@ export default function SettingsPage() {
       const url = await getDownloadURL(storageRef);
       
       await updateProfile(user, { photoURL: url });
-      await updateDoc(doc(db, 'users', user.uid), { photoURL: url });
+      await updateDoc(doc(db, 'users', user.uid), { photoURL: url, avatarUrl: url });
+      await updateUserProfile({
+        firebaseUid: user.uid,
+        email: user.email || '',
+        avatarUrl: url
+      });
       
       toast.success('Profile photo updated!', { id: toastId });
     } catch (error) {
@@ -210,19 +240,19 @@ export default function SettingsPage() {
   // Real-time tracking for the Storage Vault counters
   const qMaterials = useMemo(() => 
     user ? query(collection(db, 'material_index'), where('userId', '==', user.uid)) : null
-  , [user?.uid]);
+  , [user]);
   
   const qPapers = useMemo(() => 
     user ? query(collection(db, 'research_papers'), where('userId', '==', user.uid)) : null
-  , [user?.uid]);
+  , [user]);
 
   const qQuestions = useMemo(() => 
     user ? query(collection(db, 'question_papers'), where('userId', '==', user.uid)) : null
-  , [user?.uid]);
+  , [user]);
 
   const qModels = useMemo(() => 
     user ? query(collection(db, 'model_papers'), where('userId', '==', user.uid)) : null
-  , [user?.uid]);
+  , [user]);
 
   const [snapMaterials, loadingMaterials] = useCollection(qMaterials);
   const [snapPapers, loadingPapers] = useCollection(qPapers);
@@ -366,7 +396,7 @@ export default function SettingsPage() {
             {/* Social Stats */}
             <div className="grid grid-cols-2 gap-4">
               <button 
-                onClick={() => handleOpenUserList('Followers', profile?.followers || [])}
+                onClick={() => handleOpenUserModal('Followers', profile?.followers || [])}
                 className="bg-secondary/50 rounded-2xl p-4 border border-border/50 flex items-center gap-4 group hover:bg-secondary transition-all"
               >
                 <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -378,7 +408,7 @@ export default function SettingsPage() {
                 </div>
               </button>
               <button 
-                onClick={() => handleOpenUserList('Following', profile?.following || [])}
+                onClick={() => handleOpenUserModal('Following', profile?.following || [])}
                 className="bg-secondary/50 rounded-2xl p-4 border border-border/50 flex items-center gap-4 group hover:bg-secondary transition-all"
               >
                 <div className="h-10 w-10 rounded-xl bg-orange-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -414,7 +444,7 @@ export default function SettingsPage() {
                     <Link href={`/dashboard/profile/${u.id}`} key={u.id} className="flex items-center justify-between p-4 rounded-2xl bg-secondary/50 hover:bg-primary/5 border border-transparent hover:border-primary/20 transition-all group">
                        <div className="flex items-center gap-4">
                           <div className="h-12 w-12 rounded-xl border border-border overflow-hidden bg-background">
-                             {u.avatarUrl ? <img src={u.avatarUrl} className="h-full w-full object-cover" /> : <User className="h-6 w-6 m-3 text-muted-foreground" />}
+                             {u.avatarUrl ? <img src={u.avatarUrl} alt={u.name || 'User'} className="h-full w-full object-cover" /> : <User className="h-6 w-6 m-3 text-muted-foreground" />}
                           </div>
                           <div>
                              <p className="font-bold text-foreground group-hover:text-primary transition-colors">{u.name}</p>
@@ -510,17 +540,20 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground italic">No research papers uploaded yet.</p>
             ) : (
               <div className="space-y-3">
-                {snapPapers?.docs.map(snap => (
-                  <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
-                    <span className="truncate pr-4">{snap.data().title}</span>
-                    <button 
-                      onClick={() => handleGenericDelete('research_papers', snap.id, snap.data().title)}
-                      className="text-rose-500 hover:scale-110 transition-transform"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+                {snapPapers?.docs.map(snap => {
+                  const d = snap.data();
+                  return (
+                    <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
+                      <span className="truncate pr-4">{d.title}</span>
+                      <button 
+                        onClick={() => handleGenericDelete('research_papers', snap.id, d.title, 'RESEARCH', d.mongodbId, d.url)}
+                        className="text-rose-500 hover:scale-110 transition-transform"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -535,17 +568,20 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground italic">No question papers uploaded yet.</p>
             ) : (
               <div className="space-y-3">
-                {snapQuestions?.docs.map(snap => (
-                  <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
-                    <span className="truncate pr-4">{snap.data().code} - {snap.data().year}</span>
-                    <button 
-                      onClick={() => handleGenericDelete('question_papers', snap.id, snap.data().subject)}
-                      className="text-rose-500 hover:scale-110 transition-transform"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+                {snapQuestions?.docs.map(snap => {
+                  const d = snap.data();
+                  return (
+                    <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
+                      <span className="truncate pr-4">{d.subject || d.code} - {d.year}</span>
+                      <button 
+                        onClick={() => handleGenericDelete('question_papers', snap.id, d.subject, 'QUESTION', d.mongodbId, d.url)}
+                        className="text-rose-500 hover:scale-110 transition-transform"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -560,17 +596,20 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground italic">No model papers uploaded yet.</p>
             ) : (
               <div className="space-y-3">
-                {snapModels?.docs.map(snap => (
-                  <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
-                    <span className="truncate pr-4">{snap.data().title}</span>
-                    <button 
-                      onClick={() => handleGenericDelete('model_papers', snap.id, snap.data().subject)}
-                      className="text-rose-500 hover:scale-110 transition-transform"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+                {snapModels?.docs.map(snap => {
+                  const d = snap.data();
+                  return (
+                    <div key={snap.id} className="flex items-center justify-between text-sm py-2 border-b border-border/50 last:border-0 text-foreground">
+                      <span className="truncate pr-4">{d.title || d.subject}</span>
+                      <button 
+                        onClick={() => handleGenericDelete('model_papers', snap.id, d.subject || d.title, 'MODEL', d.mongodbId, d.url)}
+                        className="text-rose-500 hover:scale-110 transition-transform"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

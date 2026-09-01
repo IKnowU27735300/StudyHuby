@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User, signInWithPopup, signOut } from 'firebase/auth';
 import { auth, googleProvider, db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, onSnapshot, DocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { syncUser } from '@/app/actions/user';
 
@@ -15,7 +15,7 @@ interface UserProfile {
   registrationNo?: string;
   role: 'USER' | 'ADMIN';
   loginStreak: number;
-  lastLoginAt: any;
+  lastLoginAt: unknown;
   contributionCount: number;
   totalDownloads: number;
   followers?: string[];
@@ -55,15 +55,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const userDocRef = doc(db, 'users', user.uid);
         
         // Use onSnapshot for real-time profile updates
-        unsubscribeProfile = onSnapshot(userDocRef, async (userDoc: any) => {
+        unsubscribeProfile = onSnapshot(userDocRef, async (userDoc: DocumentSnapshot<DocumentData>) => {
           if (userDoc.exists()) {
             const profileData = userDoc.data();
-            const lastLogin = profileData.lastLoginAt?.toDate() || new Date();
+            const lastLogin = profileData?.lastLoginAt?.toDate?.() || new Date();
             const today = new Date();
             const yesterday = new Date();
             yesterday.setDate(today.getDate() - 1);
 
-            let newStreak = profileData.loginStreak || 1;
+            const newStreak = profileData.loginStreak || 1;
 
             const isSameDay = (d1: Date, d2: Date) => 
               d1.getFullYear() === d2.getFullYear() &&

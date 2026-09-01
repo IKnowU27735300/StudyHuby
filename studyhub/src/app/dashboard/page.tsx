@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { FileUp, TrendingUp, Users, BookMarked, Clock, ArrowUpRight, ShieldCheck, Sparkles, Loader2, Search, Eye, Download, Filter, BookOpen, FileText, Award, GraduationCap as QAIcon, MapPin, User as UserIcon, Check } from 'lucide-react';
+import { FileUp, TrendingUp, Users, BookMarked, ArrowUpRight, ShieldCheck, Loader2, Search, Eye, Download, BookOpen, FileText, Award, GraduationCap as QAIcon, MapPin, User as UserIcon } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { db } from '@/lib/firebase';
-import { collection, query, orderBy, where } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import { globalSearch, SearchCategory } from '@/app/actions/search';
 import { downloadMaterial } from '@/app/actions/materials';
 import { incrementDownloads } from '@/app/actions/user';
@@ -13,14 +13,6 @@ import { toast } from 'react-hot-toast';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import FileViewerModal from '@/components/FileViewerModal';
-
-const CATEGORIES: { label: string; value: SearchCategory; icon: any }[] = [
-  { label: 'Materials', value: 'MATERIALS', icon: BookOpen },
-  { label: 'Q-Papers', value: 'QUESTION_PAPERS', icon: QAIcon },
-  { label: 'Models', value: 'MODEL_PAPERS', icon: Award },
-  { label: 'Research', value: 'RESEARCH_PAPERS', icon: FileText },
-  { label: 'Accounts', value: 'ACCOUNTS', icon: UserIcon },
-];
 
 export default function DashboardPage() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -30,7 +22,6 @@ export default function DashboardPage() {
   const [categories, setCategories] = useState<SearchCategory[]>((searchParams.get('c')?.split(',') as SearchCategory[]) || ['MATERIALS']);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
 
   // File Viewer State
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -360,9 +351,12 @@ export default function DashboardPage() {
              </p>
           </div>
 
-          <button className="mt-8 w-full h-14 rounded-2xl bg-foreground text-background font-bold shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all">
-             View Leaderboard
-          </button>
+          <Link 
+            href="/dashboard/network" 
+            className="mt-8 w-full h-14 rounded-2xl bg-foreground text-background font-bold shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
+          >
+             Explore Community
+          </Link>
         </div>
       </div>
 

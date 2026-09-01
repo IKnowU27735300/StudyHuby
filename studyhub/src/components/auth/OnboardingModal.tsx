@@ -9,7 +9,7 @@ import { updateUserOnboarding } from "@/app/actions/user";
 import { useRouter } from "next/navigation";
 
 export default function OnboardingModal() {
-  const { user, profile, loading: authLoading, isOnboardingComplete } = useAuth();
+  const { user, loading: authLoading, isOnboardingComplete } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -44,20 +44,21 @@ export default function OnboardingModal() {
 
       toast.success("Welcome to StudyHub!");
       router.push('/dashboard');
-    } catch (error: any) {
-      console.error("Onboarding error:", error);
-      toast.error(error.message || "Something went wrong. Please try again.");
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+      console.error("Onboarding error:", msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="glass w-full max-w-xl rounded-[2.5rem] p-10 border border-white/10 animate-in fade-in zoom-in duration-300">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-md">
+      <div className="glass w-full max-w-xl rounded-[2.5rem] p-10 border border-border bg-card shadow-2xl animate-in fade-in zoom-in duration-300">
         <div className="text-center mb-10">
-          <h2 className="text-3xl font-black font-outfit text-white mb-2">Let's get started! 🎓</h2>
-          <p className="text-muted-foreground">We just need a few details to personalize your experience.</p>
+          <h2 className="text-3xl font-black font-outfit text-foreground mb-2">Let&apos;s get started! 🎓</h2>
+          <p className="text-muted-foreground text-sm">We just need a few details to personalize your experience.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -67,7 +68,7 @@ export default function OnboardingModal() {
               required
               type="text"
               placeholder="e.g. Stanford University"
-              className="w-full h-14 rounded-2xl bg-slate-900/50 border border-white/5 px-6 text-white focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
+              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
               value={formData.college}
               onChange={(e) => setFormData({...formData, college: e.target.value})}
             />
@@ -79,7 +80,7 @@ export default function OnboardingModal() {
               required
               type="text"
               placeholder="e.g. B.Tech CSE"
-              className="w-full h-14 rounded-2xl bg-slate-900/50 border border-white/5 px-6 text-white focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
+              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
               value={formData.course}
               onChange={(e) => setFormData({...formData, course: e.target.value})}
             />
@@ -91,7 +92,7 @@ export default function OnboardingModal() {
               required
               type="text"
               placeholder="Roll Number"
-              className="w-full h-14 rounded-2xl bg-slate-900/50 border border-white/5 px-6 text-white focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
+              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
               value={formData.registrationNo}
               onChange={(e) => setFormData({...formData, registrationNo: e.target.value})}
             />
@@ -100,30 +101,30 @@ export default function OnboardingModal() {
           <div className="space-y-2">
             <label className="text-xs font-black uppercase tracking-widest text-muted-foreground ml-2">Semester</label>
             <select
-              className="w-full h-14 rounded-2xl bg-slate-900/50 border border-white/5 px-6 text-white focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all appearance-none"
+              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all appearance-none"
               value={formData.semester}
               onChange={(e) => setFormData({...formData, semester: parseInt(e.target.value)})}
             >
-              {[1, 2, 3, 4, 5, 6, 7, 8].map(s => <option key={s} value={s} className="bg-slate-900">Semester {s}</option>)}
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(s => <option key={s} value={s} className="bg-card text-foreground">Semester {s}</option>)}
             </select>
           </div>
 
           <div className="space-y-2">
             <label className="text-xs font-black uppercase tracking-widest text-muted-foreground ml-2">Academic Year</label>
             <select
-              className="w-full h-14 rounded-2xl bg-slate-900/50 border border-white/5 px-6 text-white focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all appearance-none"
+              className="w-full h-14 rounded-2xl bg-secondary border border-border px-6 text-foreground focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all appearance-none"
               value={formData.academicYear}
               onChange={(e) => setFormData({...formData, academicYear: e.target.value})}
             >
-              <option value="2024-25" className="bg-slate-900">2024-25</option>
-              <option value="2023-24" className="bg-slate-900">2023-24</option>
+              <option value="2024-25" className="bg-card text-foreground">2024-25</option>
+              <option value="2023-24" className="bg-card text-foreground">2023-24</option>
             </select>
           </div>
 
           <button
             disabled={loading}
             type="submit"
-            className="md:col-span-2 h-14 mt-4 rounded-2xl bg-primary text-white font-bold text-lg shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            className="md:col-span-2 h-14 mt-4 rounded-2xl bg-primary text-primary-foreground font-bold text-lg shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
           >
             {loading ? 'Setting up Profile...' : 'Complete Onboarding'}
           </button>

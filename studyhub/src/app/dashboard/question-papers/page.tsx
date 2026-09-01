@@ -1,20 +1,36 @@
 'use client';
 
 import { useState } from 'react';
-import { GraduationCap, Plus, Search, Table, Download, Calendar, BookOpen, Loader2, X, Eye } from 'lucide-react';
+import { Plus, Search, Download, Calendar, BookOpen, Loader2, X, Eye, Trash2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { incrementContribution, incrementDownloads } from '@/app/actions/user';
+import { incrementContribution, decrementContribution, incrementDownloads } from '@/app/actions/user';
 import { db, storage } from '@/lib/firebase';
-import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, query, orderBy, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { toast } from 'react-hot-toast';
-import { createQuestionPaper } from '@/app/actions/academic';
+import { createQuestionPaper, deleteAcademicItem } from '@/app/actions/academic';
 import FileViewerModal from '@/components/FileViewerModal';
 
+interface QuestionPaperDoc {
+  id: string;
+  mongodbId?: string;
+  subject: string;
+  code: string;
+  year: number;
+  semester: number;
+  branch: string;
+  type?: string;
+  url: string;
+  fileName?: string;
+  size?: number;
+  userId?: string;
+  uploader?: string;
+  createdAt?: unknown;
+}
 
 export default function QuestionPapersPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -32,16 +48,19 @@ export default function QuestionPapersPage() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerData, setViewerData] = useState({ url: '', name: '', mimeType: 'application/pdf' });
 
-  const [snapshot, loading, error] = useCollection(
+  const [snapshot, loading] = useCollection(
     query(collection(db, 'question_papers'), orderBy('createdAt', 'desc'))
   );
 
-  const papers = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) || [];
-  const filteredPapers = papers.filter(p => 
-    p.subject?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.branch?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const papers: QuestionPaperDoc[] = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<QuestionPaperDoc, 'id'>) })) || [];
+  const filteredPapers = papers.filter(p => {
+    const q = searchTerm.toLowerCase();
+    return (
+      p.subject?.toLowerCase().includes(q) || 
+      p.code?.toLowerCase().includes(q) ||
+      p.branch?.toLowerCase().includes(q)
+    );
+  });
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,7 +85,7 @@ export default function QuestionPapersPage() {
         year: parseInt(year),
         semester: parseInt(semester),
         branch,
-        college: user.displayName || 'Universal Campus',
+        college: profile?.college || 'Universal Campus',
         url,
         tags: [branch, code.toUpperCase()]
       });
@@ -74,7 +93,6 @@ export default function QuestionPapersPage() {
       if (!mongoResult.success) {
         throw new Error(mongoResult.error || "Failed to sync question paper to MongoDB profile.");
       }
-
 
       // 2. Save to Firestore with MongoDB ID reference
       await addDoc(collection(db, 'question_papers'), {
@@ -88,41 +106,71 @@ export default function QuestionPapersPage() {
         fileName: file.name,
         size: file.size,
         userId: user.uid,
-        mongodbId: mongoResult.id, // Linked ID
+        mongodbId: mongoResult.id,
         uploader: user.displayName || 'Learner',
         createdAt: serverTimestamp()
       });
-
-
 
       await incrementContribution(user.uid);
 
       toast.success('Question paper uploaded successfully!', { id: toastId });
       setIsModalOpen(false);
       setSubject(''); setCode(''); setYear(new Date().getFullYear().toString()); setSemester('1'); setBranch(''); setType('Regular'); setFile(null);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || 'Error uploading material', { id: toastId });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error uploading material';
+      toast.error(message, { id: toastId });
     } finally {
       setUploading(false);
     }
   };
 
-  const handleOpenViewer = async (paper: any) => {
+  const handleDelete = async (paper: QuestionPaperDoc) => {
+    if (!user) return;
+    if (!window.confirm(`Are you sure you want to delete "${paper.subject}"?`)) return;
+
+    const toastId = toast.loading('Deleting question paper...');
+    try {
+      // 1. Delete from MongoDB
+      if (paper.mongodbId) {
+        await deleteAcademicItem(paper.mongodbId, user.uid, 'QUESTION');
+      }
+      // 2. Delete from Firebase Storage if URL present
+      if (paper.url && paper.url.includes('firebase')) {
+        try {
+          const fileRef = ref(storage, paper.url);
+          await deleteObject(fileRef);
+        } catch {
+          // Ignore
+        }
+      }
+      // 3. Delete from Firestore
+      await deleteDoc(doc(db, 'question_papers', paper.id));
+      await decrementContribution(user.uid);
+
+      toast.success('Question paper deleted successfully', { id: toastId });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Deletion failed';
+      toast.error(msg, { id: toastId });
+    }
+  };
+
+  const handleOpenViewer = async (paper: QuestionPaperDoc) => {
     setViewerData({
       url: paper.url,
       name: paper.subject,
       mimeType: paper.url.includes('.pdf') ? 'application/pdf' : 'image/jpeg'
     });
     setViewerOpen(true);
-    if (paper.userId) await incrementDownloads(paper.userId);
+    if (paper.userId && paper.userId !== user?.uid) {
+      await incrementDownloads(paper.userId);
+    }
   };
 
   return (
     <div className="flex flex-col gap-8 relative">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold font-outfit text-white">Question Papers Vault</h2>
+          <h2 className="text-3xl font-bold font-outfit text-foreground">Question Papers Vault</h2>
           <p className="text-muted-foreground mt-1">Practice with previous year exams and internal assessments.</p>
         </div>
         <button 
@@ -144,12 +192,12 @@ export default function QuestionPapersPage() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search by subject, code, or branch..."
-            className="w-full h-12 rounded-xl bg-background border border-border pl-12 pr-4 text-sm font-medium focus:outline-none focus:border-orange-500 transition-all"
+            className="w-full h-12 rounded-xl bg-background border border-border pl-12 pr-4 text-sm font-medium focus:outline-none focus:border-orange-500 transition-all text-foreground"
           />
         </div>
       </div>
 
-      <div className="glass rounded-[2.5rem] overflow-hidden border border-white/5 relative min-h-[300px]">
+      <div className="glass rounded-[2.5rem] overflow-hidden border border-border relative min-h-[300px] bg-card">
         {loading ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />
@@ -164,7 +212,7 @@ export default function QuestionPapersPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
-                <tr className="bg-white/5 border-b border-white/10">
+                <tr className="bg-secondary/50 border-b border-border">
                   <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-muted-foreground">Subject & Code</th>
                   <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-muted-foreground">Semester</th>
                   <th className="px-12 py-5 text-xs font-black uppercase tracking-widest text-muted-foreground">Year</th>
@@ -172,44 +220,65 @@ export default function QuestionPapersPage() {
                   <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-muted-foreground text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
-                {filteredPapers.map((paper) => (
-                  <tr key={paper.id} className="group hover:bg-white/[0.02] transition-colors">
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-slate-900 border border-white/5 flex items-center justify-center">
-                          <BookOpen className="h-5 w-5 text-orange-500" />
+              <tbody className="divide-y divide-border">
+                {filteredPapers.map((paper) => {
+                  const isOwner = user && paper.userId === user.uid;
+
+                  return (
+                    <tr key={paper.id} className="group hover:bg-secondary/30 transition-colors">
+                      <td className="px-8 py-6">
+                        <div className="flex items-center gap-4">
+                          <div className="h-10 w-10 rounded-xl bg-secondary border border-border flex items-center justify-center">
+                            <BookOpen className="h-5 w-5 text-orange-500" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-foreground group-hover:text-orange-500 transition-colors">{paper.subject}</p>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-tighter">{paper.code} · {paper.branch}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-white group-hover:text-orange-500 transition-colors">{paper.subject}</p>
-                          <p className="text-xs text-muted-foreground font-medium uppercase tracking-tighter">{paper.code} · {paper.branch}</p>
+                      </td>
+                      <td className="px-8 py-6">
+                        <span className="text-sm font-bold text-foreground bg-secondary px-3 py-1 rounded-lg border border-border">Sem {paper.semester}</span>
+                      </td>
+                      <td className="px-12 py-6">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground font-bold font-outfit">
+                          <Calendar className="h-4 w-4" />
+                          {paper.year}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-8 py-6">
-                      <span className="text-sm font-bold text-slate-300 bg-white/5 px-3 py-1 rounded-lg border border-white/5">Sem {paper.semester}</span>
-                    </td>
-                    <td className="px-12 py-6">
-                      <div className="flex items-center gap-2 text-sm text-slate-400 font-bold font-outfit">
-                        <Calendar className="h-4 w-4" />
-                        {paper.year}
-                      </div>
-                    </td>
-                    <td className="px-8 py-6">
-                      <span className="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded bg-white/5 border border-white/5 text-slate-400">
-                        {paper.type || 'Regular'}
-                      </span>
-                    </td>
-                    <td className="px-8 py-6 text-right flex items-center justify-end gap-2">
-                       <button onClick={() => handleOpenViewer(paper)} className="h-10 w-10 rounded-xl bg-white/5 text-white border border-white/10 inline-flex items-center justify-center hover:bg-white/10 transition-all">
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => window.open(paper.url, '_blank')} className="h-10 w-10 rounded-xl bg-orange-600/10 text-orange-500 border border-orange-600/20 inline-flex items-center justify-center hover:bg-orange-600 hover:text-white transition-all">
-                        <Download className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-8 py-6">
+                        <span className="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded bg-secondary border border-border text-muted-foreground">
+                          {paper.type || 'Regular'}
+                        </span>
+                      </td>
+                      <td className="px-8 py-6 text-right flex items-center justify-end gap-2">
+                        <button 
+                          onClick={() => handleOpenViewer(paper)} 
+                          className="h-10 w-10 rounded-xl bg-secondary text-foreground border border-border inline-flex items-center justify-center hover:bg-muted transition-all"
+                          title="Preview Document"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button 
+                          onClick={() => window.open(paper.url, '_blank')} 
+                          className="h-10 w-10 rounded-xl bg-orange-600/10 text-orange-500 border border-orange-600/20 inline-flex items-center justify-center hover:bg-orange-600 hover:text-white transition-all"
+                          title="Download"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
+                        {isOwner && (
+                          <button 
+                            onClick={() => handleDelete(paper)} 
+                            className="h-10 w-10 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20 inline-flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -228,40 +297,40 @@ export default function QuestionPapersPage() {
               <X className="h-5 w-5" />
             </button>
             
-            <h3 className="text-2xl font-bold font-outfit text-white mb-6">Add Question Paper</h3>
+            <h3 className="text-2xl font-bold font-outfit text-foreground mb-6">Add Question Paper</h3>
             
             <form onSubmit={handleUpload} className="flex flex-col gap-5">
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Subject</label>
-                <input required type="text" value={subject} onChange={e => setSubject(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-white" placeholder="e.g. Database Management Systems" />
+                <input required type="text" value={subject} onChange={e => setSubject(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-foreground" placeholder="e.g. Database Management Systems" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Subject Code</label>
-                  <input required type="text" value={code} onChange={e => setCode(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-white" placeholder="e.g. CS301" />
+                  <input required type="text" value={code} onChange={e => setCode(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-foreground" placeholder="e.g. CS301" />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Branch / Course</label>
-                  <input required type="text" value={branch} onChange={e => setBranch(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-white" placeholder="e.g. B.Tech CSE" />
+                  <input required type="text" value={branch} onChange={e => setBranch(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-foreground" placeholder="e.g. B.Tech CSE" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Semester</label>
-                  <input required type="number" min="1" max="10" value={semester} onChange={e => setSemester(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-white" placeholder="5" />
+                  <input required type="number" min="1" max="10" value={semester} onChange={e => setSemester(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-foreground" placeholder="5" />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Exam Year</label>
-                  <input required type="number" value={year} onChange={e => setYear(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-white" placeholder="2024" />
+                  <input required type="number" value={year} onChange={e => setYear(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-foreground" placeholder="2024" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Type</label>
-                  <select required value={type} onChange={e => setType(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-white">
+                  <select required value={type} onChange={e => setType(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-orange-500 outline-none text-foreground">
                     <option value="Regular">Regular (Default)</option>
                     <option value="Makeup">Makeup</option>
                     <option value="Reexam">Reexam</option>
@@ -301,3 +370,4 @@ export default function QuestionPapersPage() {
     </div>
   );
 }
+

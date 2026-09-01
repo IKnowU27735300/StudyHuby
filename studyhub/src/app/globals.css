@@ -80,9 +80,6 @@
 
 * {
   border-color: var(--border);
-  transition-property: background-color, border-color, color, fill, stroke, opacity;
-  transition-duration: 500ms;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 body {

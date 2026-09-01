@@ -12,7 +12,7 @@ export default function ContributorsBox() {
              Meet the <span className="gradient-text">Project Visionary</span>
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto">
-             The soul behind StudyHub's mission to revolutionize academic resource sharing.
+             The soul behind StudyHub&apos;s mission to revolutionize academic resource sharing.
           </p>
         </div>
 

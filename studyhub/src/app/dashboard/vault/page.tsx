@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, query, where, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { 
   Archive, 
@@ -16,14 +16,28 @@ import {
   Award, 
   HardDrive, 
   Clock, 
-  Loader2,
-  AlertCircle
+  Loader2
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { deleteMaterial, downloadMaterial } from '@/app/actions/materials';
 import { deleteAcademicItem, downloadAcademicItem } from '@/app/actions/academic';
+import { decrementContribution } from '@/app/actions/user';
+import { storage } from '@/lib/firebase';
+import { ref, deleteObject } from 'firebase/storage';
 import FileViewerModal from '@/components/FileViewerModal';
 
+export interface VaultFile {
+  id: string;
+  mongodbId?: string;
+  title?: string;
+  subject?: string;
+  journal?: string;
+  url?: string;
+  size?: number;
+  mimeType?: string;
+  _type: 'MATERIALS' | 'QUESTION_PAPERS' | 'MODEL_PAPERS' | 'RESEARCH_PAPERS';
+  createdAt?: unknown;
+}
 
 export default function VaultPage() {
   const { user } = useAuth();
@@ -37,7 +51,7 @@ export default function VaultPage() {
     mimeType: string; 
     id?: string; 
     type?: string;
-    fileObj: any;
+    fileObj: VaultFile | null;
   }>({
     url: null,
     name: '',
@@ -78,16 +92,22 @@ export default function VaultPage() {
   }), [snapMaterials, snapQuestions, snapModels, snapResearch]);
 
   const myFiles = useMemo(() => {
-    const allDocs: any[] = [
-      ...(snapMaterials?.docs.map(d => ({ ...(d.data() as any), id: d.id, _type: 'MATERIALS' })) || []),
-      ...(snapQuestions?.docs.map(d => ({ ...(d.data() as any), id: d.id, _type: 'QUESTION_PAPERS' })) || []),
-      ...(snapModels?.docs.map(d => ({ ...(d.data() as any), id: d.id, _type: 'MODEL_PAPERS' })) || []),
-      ...(snapResearch?.docs.map(d => ({ ...(d.data() as any), id: d.id, _type: 'RESEARCH_PAPERS' })) || []),
+    const allDocs: VaultFile[] = [
+      ...(snapMaterials?.docs.map(d => ({ ...(d.data() as Omit<VaultFile, 'id' | '_type'>), id: d.id, _type: 'MATERIALS' as const })) || []),
+      ...(snapQuestions?.docs.map(d => ({ ...(d.data() as Omit<VaultFile, 'id' | '_type'>), id: d.id, _type: 'QUESTION_PAPERS' as const })) || []),
+      ...(snapModels?.docs.map(d => ({ ...(d.data() as Omit<VaultFile, 'id' | '_type'>), id: d.id, _type: 'MODEL_PAPERS' as const })) || []),
+      ...(snapResearch?.docs.map(d => ({ ...(d.data() as Omit<VaultFile, 'id' | '_type'>), id: d.id, _type: 'RESEARCH_PAPERS' as const })) || []),
     ];
 
-    return allDocs.sort((a: any, b: any) => 
-      (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-    );
+    return allDocs.sort((a, b) => {
+      const timeA = typeof a.createdAt === 'object' && a.createdAt !== null && 'seconds' in a.createdAt 
+        ? (a.createdAt as { seconds: number }).seconds 
+        : 0;
+      const timeB = typeof b.createdAt === 'object' && b.createdAt !== null && 'seconds' in b.createdAt 
+        ? (b.createdAt as { seconds: number }).seconds 
+        : 0;
+      return timeB - timeA;
+    });
   }, [snapMaterials, snapQuestions, snapModels, snapResearch]);
 
   const filteredFiles = myFiles.filter(f => {
@@ -118,40 +138,50 @@ export default function VaultPage() {
   };
 
   const handleDelete = async (id: string, fileName: string, type: string) => {
+    if (!user) return;
     if (!confirm(`Are you sure you want to delete "${fileName}"? This cannot be undone.`)) return;
 
     const toastId = toast.loading('Deleting file...');
     try {
+      const file = myFiles.find(f => f.id === id);
+
       if (type === 'MATERIALS') {
-        // Study Materials use the mongodbId stored in the Firestore index
-        const file = myFiles.find(f => f.id === id);
         if (file?.mongodbId) {
-          await deleteMaterial(file.mongodbId, user?.uid || '');
+          await deleteMaterial(file.mongodbId, user.uid);
         }
       } else {
-        // Research, Question, and Model Papers
-        const file = myFiles.find(f => f.id === id);
         if (file?.mongodbId) {
           const typeMap: Record<string, 'RESEARCH' | 'QUESTION' | 'MODEL'> = {
             'RESEARCH_PAPERS': 'RESEARCH',
             'QUESTION_PAPERS': 'QUESTION',
             'MODEL_PAPERS': 'MODEL'
           };
-          await deleteAcademicItem(file.mongodbId, user?.uid || '', typeMap[type]);
+          await deleteAcademicItem(file.mongodbId, user.uid, typeMap[type]);
+        }
+
+        // Delete blob from Firebase Storage if present
+        if (file?.url && file.url.includes('firebase')) {
+          try {
+            const fileRef = ref(storage, file.url);
+            await deleteObject(fileRef);
+          } catch {
+            // Ignore if already deleted
+          }
         }
       }
-      // Always delete from Firestore to ensure real-time UI update
+
+      // Delete from Firestore
       await deleteDoc(doc(db, getCollectionName(type), id));
+      await decrementContribution(user.uid);
       
       toast.success('File removed from vault', { id: toastId });
-
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || 'Failed to delete file', { id: toastId });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete file';
+      toast.error(msg, { id: toastId });
     }
   };
 
-  const handleOpenViewer = async (file: any) => {
+  const handleOpenViewer = async (file: VaultFile) => {
     setViewerData({
       url: file.url || null,
       name: file.title || file.subject || 'Document',
@@ -182,34 +212,24 @@ export default function VaultPage() {
         } else {
           setViewerData(prev => ({ ...prev, url: result.url, mimeType: result.mimeType }));
         }
-      } catch (err) {
+      } catch {
         toast.error('Failed to load preview');
         setViewerOpen(false);
       }
     }
   };
 
-  const handleDownload = async (file: any) => {
+  const handleDownload = async (file: VaultFile | null) => {
     if (!file) return;
     const toastId = toast.loading('Downloading...');
     try {
-      let result;
       if (file.url) {
         window.open(file.url, '_blank');
         toast.dismiss(toastId);
         return;
       }
-      if (file._type === 'MATERIALS') {
-        result = await downloadMaterial(file.mongodbId);
-      } else {
-        const typeMap: Record<string, 'RESEARCH' | 'QUESTION' | 'MODEL'> = {
-          'RESEARCH_PAPERS': 'RESEARCH',
-          'QUESTION_PAPERS': 'QUESTION',
-          'MODEL_PAPERS': 'MODEL'
-        };
-        result = await downloadAcademicItem(file.mongodbId, typeMap[file._type]);
-      }
-      if ('content' in result) {
+      if (file._type === 'MATERIALS' && file.mongodbId) {
+        const result = await downloadMaterial(file.mongodbId);
         const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -218,11 +238,17 @@ export default function VaultPage() {
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
-      } else {
+      } else if (file.mongodbId) {
+        const typeMap: Record<string, 'RESEARCH' | 'QUESTION' | 'MODEL'> = {
+          'RESEARCH_PAPERS': 'RESEARCH',
+          'QUESTION_PAPERS': 'QUESTION',
+          'MODEL_PAPERS': 'MODEL'
+        };
+        const result = await downloadAcademicItem(file.mongodbId, typeMap[file._type]);
         window.open(result.url, '_blank');
       }
       toast.success('Download started!', { id: toastId });
-    } catch (err) {
+    } catch {
       toast.error('Download failed', { id: toastId });
     }
   };
@@ -345,10 +371,14 @@ export default function VaultPage() {
                        <span className="px-3 py-1 rounded-full bg-secondary text-[9px] font-black text-muted-foreground uppercase tracking-widest border border-border">
                           {file._type?.replace('_', ' ')}
                        </span>
-                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-bold uppercase tracking-tighter">
-                          <Clock className="h-3.5 w-3.5 text-primary" />
-                          {file.createdAt?.seconds ? new Date(file.createdAt.seconds * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Synchronizing...'}
-                       </div>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-bold uppercase tracking-tighter">
+                           <Clock className="h-3.5 w-3.5 text-primary" />
+                           {typeof file.createdAt === 'object' && file.createdAt !== null && 'seconds' in file.createdAt 
+                             ? new Date((file.createdAt as { seconds: number }).seconds * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) 
+                             : typeof file.createdAt === 'string' || typeof file.createdAt === 'number' 
+                               ? new Date(file.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) 
+                               : 'Synchronizing...'}
+                        </div>
                        <div className="h-1 w-1 rounded-full bg-border" />
                        <div className="text-xs text-foreground font-black uppercase tracking-tighter">
                           {formatFileSize(file.size || 0)}

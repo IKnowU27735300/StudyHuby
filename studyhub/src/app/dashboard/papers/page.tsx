@@ -1,17 +1,33 @@
 'use client';
 
 import { useState } from 'react';
-import { FileText, Plus, Search, Filter, Download, ExternalLink, ScrollText, Loader2, X, Eye } from 'lucide-react';
+import { FileText, Plus, Search, ScrollText, Loader2, X, Eye, Trash2, Download } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { incrementContribution, incrementDownloads } from '@/app/actions/user';
+import { incrementContribution, decrementContribution, incrementDownloads } from '@/app/actions/user';
 import { db, storage } from '@/lib/firebase';
-import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, query, orderBy, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { toast } from 'react-hot-toast';
-import { createResearchPaper } from '@/app/actions/academic';
+import { createResearchPaper, deleteAcademicItem } from '@/app/actions/academic';
 import FileViewerModal from '@/components/FileViewerModal';
 
+interface ResearchPaperDoc {
+  id: string;
+  mongodbId?: string;
+  title: string;
+  authors: string[] | string;
+  abstract?: string;
+  year: number;
+  journal?: string;
+  tags?: string[];
+  url: string;
+  fileName?: string;
+  size?: number;
+  userId?: string;
+  uploader?: string;
+  createdAt?: any;
+}
 
 export default function ResearchPapersPage() {
   const { user } = useAuth();
@@ -32,16 +48,23 @@ export default function ResearchPapersPage() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerData, setViewerData] = useState({ url: '', name: '', mimeType: 'application/pdf' });
 
-  const [snapshot, loading, error] = useCollection(
+  const [snapshot, loading] = useCollection(
     query(collection(db, 'research_papers'), orderBy('createdAt', 'desc'))
   );
 
-  const papers = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) || [];
-  const filteredPapers = papers.filter(p => 
-    p.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.authors?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.journal?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const papers: ResearchPaperDoc[] = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) || [];
+  
+  const filteredPapers = papers.filter(p => {
+    const query = searchTerm.toLowerCase();
+    const titleMatch = p.title?.toLowerCase().includes(query);
+    const journalMatch = p.journal?.toLowerCase().includes(query);
+    const authorMatch = Array.isArray(p.authors)
+      ? p.authors.some((a: string) => a.toLowerCase().includes(query))
+      : typeof p.authors === 'string'
+      ? p.authors.toLowerCase().includes(query)
+      : false;
+    return titleMatch || journalMatch || authorMatch;
+  });
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,7 +89,7 @@ export default function ResearchPapersPage() {
         abstract,
         year: parseInt(year),
         journal,
-        tags: tags.split(',').map(t => t.trim()).filter(t => t),
+        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
         url
       });
 
@@ -74,50 +97,79 @@ export default function ResearchPapersPage() {
         throw new Error(mongoResult.error || "Failed to sync research paper to MongoDB profile.");
       }
 
-
       // 2. Save to Firestore with MongoDB ID reference
       await addDoc(collection(db, 'research_papers'), {
         title,
-        authors,
+        authors: authors.split(',').map(a => a.trim()),
         abstract,
         year: parseInt(year),
         journal,
-        tags: tags.split(',').map(t => t.trim()).filter(t => t),
+        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
         url,
         fileName: file.name,
         size: file.size,
         userId: user.uid,
-        mongodbId: mongoResult.id, // Linked ID
+        mongodbId: mongoResult.id,
         uploader: user.displayName || 'Learner',
         createdAt: serverTimestamp()
       });
 
-
-
       await incrementContribution(user.uid);
 
-      toast.success('Research paper uploaded successfully!', { id: toastId });
+      toast.success('Research paper published successfully!', { id: toastId });
       setIsModalOpen(false);
       setTitle(''); setAuthors(''); setAbstract(''); setJournal(''); setYear(new Date().getFullYear().toString()); setTags(''); setFile(null);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || 'Error uploading material', { id: toastId });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error uploading material';
+      toast.error(message, { id: toastId });
     } finally {
       setUploading(false);
     }
   };
 
-  const handleOpenViewer = async (paper: any) => {
+  const handleDelete = async (paper: ResearchPaperDoc) => {
+    if (!user) return;
+    if (!window.confirm(`Are you sure you want to delete "${paper.title}"?`)) return;
+
+    const toastId = toast.loading('Deleting research paper...');
+    try {
+      // 1. Delete from MongoDB
+      if (paper.mongodbId) {
+        await deleteAcademicItem(paper.mongodbId, user.uid, 'RESEARCH');
+      }
+      // 2. Delete from Firebase Storage if URL present
+      if (paper.url && paper.url.includes('firebase')) {
+        try {
+          const fileRef = ref(storage, paper.url);
+          await deleteObject(fileRef);
+        } catch {
+          // Ignore if already removed or external
+        }
+      }
+      // 3. Delete from Firestore
+      await deleteDoc(doc(db, 'research_papers', paper.id));
+      await decrementContribution(user.uid);
+
+      toast.success('Research paper deleted successfully', { id: toastId });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Deletion failed';
+      toast.error(msg, { id: toastId });
+    }
+  };
+
+  const handleOpenViewer = async (paper: ResearchPaperDoc) => {
     setViewerData({
       url: paper.url,
       name: paper.title,
       mimeType: paper.url.includes('.pdf') ? 'application/pdf' : 'image/jpeg'
     });
     setViewerOpen(true);
-    if (paper.userId) await incrementDownloads(paper.userId);
+    if (paper.userId && paper.userId !== user?.uid) {
+      await incrementDownloads(paper.userId);
+    }
   };
 
-  const formatFileSize = (bytes: number) => {
+  const formatFileSize = (bytes?: number) => {
     if (!bytes) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -129,7 +181,7 @@ export default function ResearchPapersPage() {
     <div className="flex flex-col gap-8 relative">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold font-outfit text-white">Research Papers</h2>
+          <h2 className="text-3xl font-bold font-outfit text-foreground">Research Papers</h2>
           <p className="text-muted-foreground mt-1">Explore groundbreaking research published by students and faculty.</p>
         </div>
         <button 
@@ -151,7 +203,7 @@ export default function ResearchPapersPage() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search by title, authors, or journal..."
-            className="w-full h-12 rounded-xl bg-background border border-border pl-12 pr-4 text-sm font-medium focus:outline-none focus:border-purple-500 transition-all"
+            className="w-full h-12 rounded-xl bg-background border border-border pl-12 pr-4 text-sm font-medium focus:outline-none focus:border-purple-500 transition-all text-foreground"
           />
         </div>
       </div>
@@ -168,58 +220,82 @@ export default function ResearchPapersPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 pb-20">
-          {filteredPapers.map((paper) => (
-            <div key={paper.id} className="glass p-8 rounded-[2.5rem] border border-white/5 transition-all hover:border-purple-500/30 flex flex-col xl:flex-row gap-8">
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-4 mb-4">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-purple-400 bg-purple-400/10 px-3 py-1.5 rounded-lg border border-purple-500/20">
-                    Published {paper.year}
+          {filteredPapers.map((paper) => {
+            const authorText = Array.isArray(paper.authors) ? paper.authors.join(', ') : paper.authors;
+            const isOwner = user && paper.userId === user.uid;
+
+            return (
+              <div key={paper.id} className="glass p-8 rounded-[2.5rem] border border-border transition-all hover:border-purple-500/30 flex flex-col xl:flex-row gap-8 bg-card">
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-4 mb-4">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-purple-500 bg-purple-500/10 px-3 py-1.5 rounded-lg border border-purple-500/20">
+                      Published {paper.year}
+                    </div>
+                    {paper.journal && (
+                      <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground bg-secondary px-3 py-1.5 rounded-lg border border-border">
+                        {paper.journal}
+                      </div>
+                    )}
                   </div>
-                  {paper.journal && (
-                    <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10">
-                      {paper.journal}
+
+                  <h3 className="text-2xl font-bold text-foreground mb-3 font-outfit leading-tight hover:text-purple-500 transition-colors cursor-pointer">
+                    {paper.title}
+                  </h3>
+                  
+                  <p className="text-sm font-semibold text-muted-foreground mb-4 flex items-center gap-2">
+                    <ScrollText className="h-4 w-4 text-purple-500" />
+                    Authored by {authorText}
+                  </p>
+
+                  {paper.abstract && (
+                    <div className="bg-secondary/40 rounded-2xl p-6 border border-border mb-6">
+                      <h4 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground mb-3">Abstract Excerpt</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed italic">
+                        &quot;{paper.abstract}&quot;
+                      </p>
                     </div>
                   )}
-                </div>
 
-                <h3 className="text-2xl font-bold text-white mb-3 font-outfit leading-tight hover:text-purple-400 transition-colors cursor-pointer">
-                  {paper.title}
-                </h3>
-                
-                <p className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
-                  <ScrollText className="h-4 w-4 text-purple-500" />
-                  Authored by {paper.authors}
-                </p>
-
-                {paper.abstract && (
-                  <div className="bg-slate-900/40 rounded-2xl p-6 border border-white/5 mb-6">
-                    <h4 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground mb-3">Abstract Excerpt</h4>
-                    <p className="text-sm text-slate-400 leading-relaxed italic">
-                      "{paper.abstract}"
-                    </p>
+                  <div className="flex flex-wrap gap-2">
+                    {(paper.tags || []).map((tag: string) => (
+                      <span key={tag} className="px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] font-bold text-purple-500 uppercase tracking-wider">
+                        #{tag}
+                      </span>
+                    ))}
                   </div>
-                )}
+                </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {(paper.tags || []).map((tag: string) => (
-                    <span key={tag} className="px-3 py-1.5 rounded-xl bg-purple-500/5 border border-purple-500/10 text-[11px] font-bold text-purple-300 uppercase tracking-wider">
-                      #{tag}
-                    </span>
-                  ))}
+                <div className="xl:w-64 flex flex-col gap-3 justify-center border-t border-border xl:border-none pt-6 xl:pt-0">
+                  <button 
+                    onClick={() => handleOpenViewer(paper)} 
+                    className="h-14 w-full rounded-2xl bg-purple-600 text-white font-bold flex items-center justify-center gap-3 shadow-xl hover:bg-purple-500 transition-colors"
+                  >
+                    <Eye className="h-5 w-5" />
+                    View Document
+                  </button>
+                  <button 
+                    onClick={() => window.open(paper.url, '_blank')} 
+                    className="h-12 w-full rounded-2xl bg-secondary border border-border text-foreground font-bold flex items-center justify-center gap-2 hover:bg-muted transition-colors text-sm"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download Copy
+                  </button>
+                  {isOwner && (
+                    <button 
+                      onClick={() => handleDelete(paper)} 
+                      className="h-10 w-full rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 font-bold flex items-center justify-center gap-2 hover:bg-rose-500 hover:text-white transition-all text-xs mt-1"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete Paper
+                    </button>
+                  )}
+                  <div className="text-center mt-2 text-xs text-muted-foreground font-medium">
+                     {paper.size ? formatFileSize(paper.size) : ''}
+                  </div>
                 </div>
               </div>
-
-              <div className="xl:w-64 flex flex-col gap-3 justify-center border-t border-white/5 xl:border-none pt-6 xl:pt-0">
-                <button onClick={() => handleOpenViewer(paper)} className="h-14 w-full rounded-2xl bg-white text-slate-950 font-bold flex items-center justify-center gap-3 shadow-xl hover:bg-slate-100 transition-colors">
-                  <Eye className="h-5 w-5" />
-                  View Full Document
-                </button>
-                <div className="text-center mt-2 text-xs text-muted-foreground font-medium">
-                   {paper.size ? formatFileSize(paper.size) : ''}
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -235,38 +311,38 @@ export default function ResearchPapersPage() {
               <X className="h-5 w-5" />
             </button>
             
-            <h3 className="text-2xl font-bold font-outfit text-white mb-6">Submit Research Paper</h3>
+            <h3 className="text-2xl font-bold font-outfit text-foreground mb-6">Submit Research Paper</h3>
             
             <form onSubmit={handleUpload} className="flex flex-col gap-5">
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Title</label>
-                <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-white" placeholder="e.g. Optimizing Micro-services..." />
+                <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-foreground" placeholder="e.g. Optimizing Micro-services..." />
               </div>
 
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Authors</label>
-                <input required type="text" value={authors} onChange={e => setAuthors(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-white" placeholder="e.g. John Doe, Jane Smith" />
+                <input required type="text" value={authors} onChange={e => setAuthors(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-foreground" placeholder="e.g. John Doe, Jane Smith" />
               </div>
               
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Abstract (Optional)</label>
-                <textarea rows={3} value={abstract} onChange={e => setAbstract(e.target.value)} className="w-full rounded-xl border border-border bg-background p-4 text-sm focus:border-purple-500 outline-none resize-none text-white" placeholder="Brief summary of the paper..." />
+                <textarea rows={3} value={abstract} onChange={e => setAbstract(e.target.value)} className="w-full rounded-xl border border-border bg-background p-4 text-sm focus:border-purple-500 outline-none resize-none text-foreground" placeholder="Brief summary of the paper..." />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Journal / Conference</label>
-                  <input type="text" value={journal} onChange={e => setJournal(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-white" placeholder="e.g. IEEE Transactions" />
+                  <input type="text" value={journal} onChange={e => setJournal(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-foreground" placeholder="e.g. IEEE Transactions" />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Year</label>
-                  <input required type="number" value={year} onChange={e => setYear(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-white" placeholder="2024" />
+                  <input required type="number" value={year} onChange={e => setYear(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-foreground" placeholder="2024" />
                 </div>
               </div>
 
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Tags (comma separated)</label>
-                <input type="text" value={tags} onChange={e => setTags(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-white" placeholder="e.g. Cloud Computing, AI" />
+                <input type="text" value={tags} onChange={e => setTags(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-purple-500 outline-none text-foreground" placeholder="e.g. Cloud Computing, AI" />
               </div>
 
               <div>
@@ -301,4 +377,5 @@ export default function ResearchPapersPage() {
     </div>
   );
 }
+
 

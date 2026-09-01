@@ -6,17 +6,16 @@ import { doc, setDoc, increment } from 'firebase/firestore';
 
 export async function incrementContribution(firebaseUid: string) {
   try {
-    // We only update Firestore now to avoid Prisma schema sync issues
-    // Real-time counts are driven by Firestore snapshots
     const userDocRef = doc(db, 'users', firebaseUid);
     await setDoc(userDocRef, {
       contributionCount: increment(1)
     }, { merge: true });
 
     return { success: true };
-  } catch (error: any) {
-    console.error('Error incrementing contribution:', error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error incrementing contribution';
+    console.error('Error incrementing contribution:', message);
+    return { success: false, error: message };
   }
 }
 
@@ -28,9 +27,10 @@ export async function decrementContribution(firebaseUid: string) {
     }, { merge: true });
 
     return { success: true };
-  } catch (error: any) {
-    console.error('Error decrementing contribution:', error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error decrementing contribution';
+    console.error('Error decrementing contribution:', message);
+    return { success: false, error: message };
   }
 }
 
@@ -41,9 +41,10 @@ export async function incrementDownloads(firebaseUid: string) {
       totalDownloads: increment(1)
     }, { merge: true });
     return { success: true };
-  } catch (error: any) {
-    console.error('Error incrementing downloads:', error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error incrementing downloads';
+    console.error('Error incrementing downloads:', message);
+    return { success: false, error: message };
   }
 }
 
@@ -54,9 +55,10 @@ export async function decrementDownloads(firebaseUid: string) {
       totalDownloads: increment(-1)
     }, { merge: true });
     return { success: true };
-  } catch (error: any) {
-    console.error('Error decrementing downloads:', error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error decrementing downloads';
+    console.error('Error decrementing downloads:', message);
+    return { success: false, error: message };
   }
 }
 
@@ -68,7 +70,7 @@ export async function syncUser(data: {
 }) {
   try {
     let user = await prisma.user.findFirst({
-      where: { firebaseUid: data.firebaseUid } as any
+      where: { firebaseUid: data.firebaseUid }
     });
 
     if (user) {
@@ -89,13 +91,14 @@ export async function syncUser(data: {
           name: data.name,
           avatarUrl: data.avatarUrl,
           loginStreak: 1,
-        } as any
+        }
       });
     }
     return { success: true, id: user.id };
-  } catch (error: any) {
-    console.error('Error syncing user to MongoDB:', error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error syncing user';
+    console.error('Error syncing user to MongoDB:', message);
+    return { success: false, error: message };
   }
 }
 
@@ -109,7 +112,7 @@ export async function updateUserOnboarding(data: {
 }) {
   try {
     const user = await prisma.user.findFirst({
-      where: { firebaseUid: data.firebaseUid } as any
+      where: { firebaseUid: data.firebaseUid }
     });
 
     if (user) {
@@ -125,9 +128,39 @@ export async function updateUserOnboarding(data: {
       });
     }
     return { success: true };
-  } catch (error: any) {
-    console.error('Error updating user onboarding in MongoDB:', error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error updating user onboarding';
+    console.error('Error updating user onboarding in MongoDB:', message);
+    return { success: false, error: message };
+  }
+}
+
+export async function updateUserProfile(data: {
+  firebaseUid: string;
+  name?: string;
+  avatarUrl?: string;
+  email?: string;
+}) {
+  try {
+    const user = await prisma.user.findFirst({
+      where: { firebaseUid: data.firebaseUid }
+    });
+
+    if (user) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
+          ...(data.email !== undefined ? { email: data.email } : {}),
+        }
+      });
+    }
+    return { success: true };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to update user profile';
+    console.error('Error updating user profile in MongoDB:', message);
+    return { success: false, error: message };
   }
 }
 
@@ -153,9 +186,10 @@ export async function searchUsers(query: string) {
       take: 20,
     });
     return { success: true, users };
-  } catch (error: any) {
-    console.error('Error searching users:', error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error searching users';
+    console.error('Error searching users:', message);
+    return { success: false, error: message };
   }
 }
 
@@ -165,18 +199,21 @@ export async function getUserById(id: string) {
       where: { id },
       select: {
         id: true,
+        firebaseUid: true,
         name: true,
         email: true,
         avatarUrl: true,
         college: true,
         course: true,
         role: true,
+        loginStreak: true,
         createdAt: true,
       }
     });
     return { success: true, user };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error fetching user';
+    return { success: false, error: message };
   }
 }
 
@@ -185,9 +222,10 @@ export async function getUsersByFirebaseUids(uids: string[]) {
     const users = await prisma.user.findMany({
       where: {
         firebaseUid: { in: uids }
-      } as any,
+      },
       select: {
         id: true,
+        firebaseUid: true,
         name: true,
         email: true,
         avatarUrl: true,
@@ -196,7 +234,9 @@ export async function getUsersByFirebaseUids(uids: string[]) {
       }
     });
     return { success: true, users };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Error fetching users';
+    return { success: false, error: message };
   }
 }
+

@@ -49,8 +49,9 @@ export async function toggleFollow(currentFirebaseUid: string, currentUserName: 
 
       return { success: true, isFollowing: true };
     }
-  } catch (error: any) {
-    console.error('Toggle follow failed:', error);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Toggle follow failed';
+    console.error('Toggle follow failed:', msg);
+    return { success: false, error: msg };
   }
 }

@@ -1,20 +1,33 @@
 'use client';
 
 import { useState } from 'react';
-import { Award, Plus, Grid, List, Download, Star, Clock, Loader2, X, Eye } from 'lucide-react';
+import { Award, Plus, Download, Star, Clock, Loader2, X, Eye, Trash2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { incrementContribution, incrementDownloads } from '@/app/actions/user';
+import { incrementContribution, decrementContribution, incrementDownloads } from '@/app/actions/user';
 import { db, storage } from '@/lib/firebase';
-import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, query, orderBy, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { toast } from 'react-hot-toast';
-import { createModelPaper } from '@/app/actions/academic';
+import { createModelPaper, deleteAcademicItem } from '@/app/actions/academic';
 import FileViewerModal from '@/components/FileViewerModal';
 
+interface ModelPaperDoc {
+  id: string;
+  mongodbId?: string;
+  title: string;
+  subject: string;
+  downloads?: number;
+  url: string;
+  fileName?: string;
+  size?: number;
+  userId?: string;
+  uploader?: string;
+  createdAt?: unknown;
+}
 
 export default function ModelPapersPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -28,11 +41,11 @@ export default function ModelPapersPage() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerData, setViewerData] = useState({ url: '', name: '', mimeType: 'application/pdf' });
 
-  const [snapshot, loading, error] = useCollection(
+  const [snapshot, loading] = useCollection(
     query(collection(db, 'model_papers'), orderBy('createdAt', 'desc'))
   );
 
-  const models = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })) || [];
+  const models: ModelPaperDoc[] = snapshot?.docs.map(doc => ({ id: doc.id, ...(doc.data() as Omit<ModelPaperDoc, 'id'>) })) || [];
   const filteredModels = models.filter(m => 
     m.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
     m.subject?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -61,7 +74,7 @@ export default function ModelPapersPage() {
         year: new Date().getFullYear(),
         semester: 1,
         branch: 'General',
-        college: user.displayName || 'Universal Campus',
+        college: profile?.college || 'Universal Campus',
         url,
         tags: [subject, 'Model Paper']
       });
@@ -69,7 +82,6 @@ export default function ModelPapersPage() {
       if (!mongoResult.success) {
         throw new Error(mongoResult.error || "Failed to sync model paper to MongoDB profile.");
       }
-
 
       // 2. Save to Firestore with MongoDB ID reference
       await addDoc(collection(db, 'model_papers'), {
@@ -80,41 +92,71 @@ export default function ModelPapersPage() {
         fileName: file.name,
         size: file.size,
         userId: user.uid,
-        mongodbId: mongoResult.id, // Linked ID
+        mongodbId: mongoResult.id,
         uploader: user.displayName || 'Learner',
         createdAt: serverTimestamp()
       });
-
-
 
       await incrementContribution(user.uid);
 
       toast.success('Model paper uploaded successfully!', { id: toastId });
       setIsModalOpen(false);
       setTitle(''); setSubject(''); setFile(null);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || 'Error uploading material', { id: toastId });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error uploading material';
+      toast.error(message, { id: toastId });
     } finally {
       setUploading(false);
     }
   };
 
-  const handleOpenViewer = async (model: any) => {
+  const handleDelete = async (model: ModelPaperDoc) => {
+    if (!user) return;
+    if (!window.confirm(`Are you sure you want to delete "${model.title}"?`)) return;
+
+    const toastId = toast.loading('Deleting model paper...');
+    try {
+      // 1. Delete from MongoDB
+      if (model.mongodbId) {
+        await deleteAcademicItem(model.mongodbId, user.uid, 'MODEL');
+      }
+      // 2. Delete from Firebase Storage if URL present
+      if (model.url && model.url.includes('firebase')) {
+        try {
+          const fileRef = ref(storage, model.url);
+          await deleteObject(fileRef);
+        } catch {
+          // Ignore
+        }
+      }
+      // 3. Delete from Firestore
+      await deleteDoc(doc(db, 'model_papers', model.id));
+      await decrementContribution(user.uid);
+
+      toast.success('Model paper deleted successfully', { id: toastId });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Deletion failed';
+      toast.error(msg, { id: toastId });
+    }
+  };
+
+  const handleOpenViewer = async (model: ModelPaperDoc) => {
     setViewerData({
       url: model.url,
       name: model.title,
       mimeType: model.url.includes('.pdf') ? 'application/pdf' : 'image/jpeg'
     });
     setViewerOpen(true);
-    if (model.userId) await incrementDownloads(model.userId);
+    if (model.userId && model.userId !== user?.uid) {
+      await incrementDownloads(model.userId);
+    }
   };
 
   return (
     <div className="flex flex-col gap-8 relative">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold font-outfit text-white">Model Papers</h2>
+          <h2 className="text-3xl font-bold font-outfit text-foreground">Model Papers</h2>
           <p className="text-muted-foreground mt-1">Simulate your exams with these curated model question sets.</p>
         </div>
         <button 
@@ -132,7 +174,7 @@ export default function ModelPapersPage() {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search by title or subject..."
-          className="w-full h-12 rounded-xl bg-background border border-border px-4 text-sm font-medium focus:outline-none focus:border-emerald-500 transition-all"
+          className="w-full h-12 rounded-xl bg-background border border-border px-4 text-sm font-medium focus:outline-none focus:border-emerald-500 transition-all text-foreground"
         />
       </div>
 
@@ -148,45 +190,66 @@ export default function ModelPapersPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-          {filteredModels.map((model) => (
-            <div key={model.id} className="relative glass p-8 rounded-[2.5rem] border border-white/5 overflow-hidden group flex flex-col">
-              <div className="absolute top-0 right-0 p-6 opacity-5 transition-opacity group-hover:opacity-20 scale-150 rotate-12">
-                <Award className="h-32 w-32 text-emerald-500" />
-              </div>
-              
-              <div className="relative z-10 flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-8">
-                  <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                    <Award className="h-6 w-6 text-emerald-500" />
+          {filteredModels.map((model) => {
+            const isOwner = user && model.userId === user.uid;
+
+            return (
+              <div key={model.id} className="relative glass p-8 rounded-[2.5rem] border border-border overflow-hidden group flex flex-col bg-card">
+                <div className="absolute top-0 right-0 p-6 opacity-5 transition-opacity group-hover:opacity-20 scale-150 rotate-12">
+                  <Award className="h-32 w-32 text-emerald-500" />
+                </div>
+                
+                <div className="relative z-10 flex-1 flex flex-col">
+                  <div className="flex items-center justify-between mb-8">
+                    <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                      <Award className="h-6 w-6 text-emerald-500" />
+                    </div>
+                  </div>
+
+                  <h3 className="text-xl font-bold text-foreground mb-2 leading-tight group-hover:text-emerald-500 transition-colors">{model.title}</h3>
+                  <p className="text-sm font-medium text-muted-foreground mb-8">{model.subject}</p>
+
+                  <div className="flex items-center gap-6 border-t border-border pt-6 mt-auto">
+                    <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground uppercase tracking-tighter">
+                      <Clock className="h-3.5 w-3.5" />
+                      3 Hours
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground uppercase tracking-tighter">
+                      <Star className="h-3.5 w-3.5" />
+                      {model.downloads || 0} Downloads
+                    </div>
                   </div>
                 </div>
-
-                <h3 className="text-xl font-bold text-white mb-2 leading-tight group-hover:text-emerald-400 transition-colors">{model.title}</h3>
-                <p className="text-sm font-medium text-muted-foreground mb-8">{model.subject}</p>
-
-                <div className="flex items-center gap-6 border-t border-white/5 pt-6 mt-auto">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-tighter">
-                    <Clock className="h-3.5 w-3.5" />
-                    3 Hours
-                  </div>
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-tighter">
-                    <Star className="h-3.5 w-3.5" />
-                    {model.downloads || 0} Downloads
-                  </div>
+                
+                <div className="flex gap-2 mt-8 relative z-10">
+                  <button 
+                    onClick={() => handleOpenViewer(model)} 
+                    className="h-14 w-14 shrink-0 rounded-2xl bg-secondary text-foreground border border-border font-bold flex items-center justify-center gap-2 hover:bg-muted transition-all shadow-xl"
+                    title="Preview Document"
+                  >
+                    <Eye className="h-5 w-5" />
+                  </button>
+                  <button 
+                    onClick={() => window.open(model.url, '_blank')} 
+                    className="flex-1 h-14 rounded-2xl bg-emerald-600/10 text-emerald-500 border border-emerald-600/20 font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 hover:text-white transition-all shadow-xl"
+                    title="Download"
+                  >
+                    <Download className="h-5 w-5" />
+                    Download
+                  </button>
+                  {isOwner && (
+                    <button 
+                      onClick={() => handleDelete(model)} 
+                      className="h-14 w-14 shrink-0 rounded-2xl bg-rose-500/10 text-rose-500 border border-rose-500/20 font-bold flex items-center justify-center gap-2 hover:bg-rose-500 hover:text-white transition-all shadow-xl"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-5 w-5" />
+                    </button>
+                  )}
                 </div>
               </div>
-              
-              <div className="flex gap-2 mt-8 relative z-10">
-                 <button onClick={() => handleOpenViewer(model)} className="h-14 w-14 shrink-0 rounded-2xl bg-white/5 text-white border border-white/10 font-bold flex items-center justify-center gap-2 hover:bg-white/10 transition-all shadow-xl shadow-emerald-600/5">
-                  <Eye className="h-5 w-5" />
-                </button>
-                <button onClick={() => window.open(model.url, '_blank')} className="flex-1 h-14 rounded-2xl bg-emerald-600/10 text-emerald-400 border border-emerald-600/20 font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 hover:text-white transition-all shadow-xl shadow-emerald-600/5">
-                  <Download className="h-5 w-5" />
-                  Download
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -202,19 +265,18 @@ export default function ModelPapersPage() {
               <X className="h-5 w-5" />
             </button>
             
-            <h3 className="text-2xl font-bold font-outfit text-white mb-6">Create Model Paper</h3>
+            <h3 className="text-2xl font-bold font-outfit text-foreground mb-6">Create Model Paper</h3>
             
             <form onSubmit={handleUpload} className="flex flex-col gap-5">
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Title</label>
-                <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-emerald-500 outline-none text-white" placeholder="e.g. B.Tech Semester 4 - Model Set 1" />
+                <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-emerald-500 outline-none text-foreground" placeholder="e.g. B.Tech Semester 4 - Model Set 1" />
               </div>
 
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Subject</label>
-                <input required type="text" value={subject} onChange={e => setSubject(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-emerald-500 outline-none text-white" placeholder="e.g. Computer Architecture" />
+                <input required type="text" value={subject} onChange={e => setSubject(e.target.value)} className="w-full h-12 rounded-xl border border-border bg-background px-4 text-sm focus:border-emerald-500 outline-none text-foreground" placeholder="e.g. Computer Architecture" />
               </div>
-
 
               <div>
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest pl-2 mb-2 block">Document File (PDF, PNG, JPG)</label>
@@ -248,3 +310,4 @@ export default function ModelPapersPage() {
     </div>
   );
 }
+

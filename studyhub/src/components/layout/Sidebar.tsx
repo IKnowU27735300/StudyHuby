@@ -1,11 +1,21 @@
 'use client';
 
-import { BookOpen, FileText, LayoutDashboard, GraduationCap, Settings, LogOut, ChevronRight, Share2, Flame, Award, Loader2, Users } from 'lucide-react';
+import { 
+  BookOpen, 
+  FileText, 
+  LayoutDashboard, 
+  GraduationCap, 
+  Settings, 
+  ChevronRight, 
+  Flame, 
+  Award, 
+  Users, 
+  HardDrive 
+} from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { usePathname } from 'next/navigation';
 import { useSidebar } from '@/context/SidebarContext';
-import { Menu, ChevronLeft } from 'lucide-react';
 
 const navItems = [
   { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
@@ -13,17 +23,19 @@ const navItems = [
   { name: 'Research Papers', href: '/dashboard/papers', icon: FileText },
   { name: 'Question Papers', href: '/dashboard/question-papers', icon: GraduationCap },
   { name: 'Model Papers', href: '/dashboard/model-papers', icon: Award },
+  { name: 'Discovery Hub', href: '/dashboard/network', icon: Users },
+  { name: 'Storage Vault', href: '/dashboard/vault', icon: HardDrive },
 ];
 
 export default function Sidebar() {
-  const { profile, logout, loading } = useAuth();
-  const { isCollapsed, toggleSidebar } = useSidebar();
+  const { profile, loading } = useAuth();
+  const { isCollapsed } = useSidebar();
   const pathname = usePathname();
 
   return (
     <aside className={`fixed left-0 top-0 hidden h-screen ${isCollapsed ? 'w-20' : 'w-72'} flex-col gap-6 border-r border-border bg-card p-4 lg:flex z-40 transition-all duration-300 overflow-hidden`}>
       <Link href="/dashboard" className={`flex items-center hover:opacity-80 transition-opacity ${isCollapsed ? 'justify-center' : 'gap-3 px-2'}`}>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-500 shadow-lg shadow-green-500/20">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary shadow-lg shadow-primary/20">
           <span className="text-xl font-black text-white">SH</span>
         </div>
         {!isCollapsed && <h1 className="text-2xl font-bold tracking-tight text-foreground font-outfit whitespace-nowrap">StudyHub</h1>}
@@ -91,3 +103,4 @@ export default function Sidebar() {
     </aside>
   );
 }
+

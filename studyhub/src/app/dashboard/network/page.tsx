@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, User as UserIcon, GraduationCap, Mail, Loader2, MapPin, Sparkles, Filter, BookOpen, FileText, Award, Layers } from 'lucide-react';
+import { Search, User as UserIcon, GraduationCap, Mail, MapPin, Filter, BookOpen, FileText, Award, Layers, Eye, Download } from 'lucide-react';
 import { globalSearch, SearchCategory } from '@/app/actions/search';
+import { downloadMaterial } from '@/app/actions/materials';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import FileViewerModal from '@/components/FileViewerModal';
 
-const CATEGORIES: { label: string; value: SearchCategory; icon: any }[] = [
+const CATEGORIES: { label: string; value: SearchCategory; icon: React.ComponentType<{ className?: string }> }[] = [
   { label: 'Study Materials', value: 'MATERIALS', icon: BookOpen },
   { label: 'Question Papers', value: 'QUESTION_PAPERS', icon: GraduationCap },
   { label: 'Model Papers', value: 'MODEL_PAPERS', icon: Award },
@@ -15,13 +17,39 @@ const CATEGORIES: { label: string; value: SearchCategory; icon: any }[] = [
   { label: 'Accounts', value: 'ACCOUNTS', icon: UserIcon },
 ];
 
+interface DiscoveryResult {
+  id: string;
+  name?: string;
+  email?: string;
+  avatarUrl?: string | null;
+  college?: string | null;
+  course?: string | null;
+  title?: string;
+  subject?: string;
+  subjectCode?: string;
+  year?: number | string;
+  publicationYear?: number;
+  fileUrl?: string;
+  mimeType?: string;
+  createdAt: Date | string;
+  _type: SearchCategory;
+}
+
 export default function DiscoveryPage() {
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [category, setCategory] = useState<SearchCategory>('MATERIALS');
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<DiscoveryResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+
+  // File Viewer Modal State
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerData, setViewerData] = useState<{ url: string | null; name: string; mimeType: string; id?: string }>({
+    url: null,
+    name: '',
+    mimeType: '',
+  });
 
   useEffect(() => {
     handleSearch(searchTerm, category, user?.uid);
@@ -31,12 +59,12 @@ export default function DiscoveryPage() {
     setLoading(true);
     try {
       const result = await globalSearch(query, [cat], uid);
-      if (result.success) {
-        setResults(result.data || []);
+      if (result.success && result.data) {
+        setResults(result.data as DiscoveryResult[]);
       } else {
         toast.error('Search failed');
       }
-    } catch (err) {
+    } catch {
       toast.error('An error occurred');
     } finally {
       setLoading(false);
@@ -49,6 +77,57 @@ export default function DiscoveryPage() {
     }, 400);
     return () => clearTimeout(timeout);
   }, [searchTerm]);
+
+  const handleOpenViewer = async (item: DiscoveryResult) => {
+    const name = item.title || item.subject || 'Document';
+    const mimeType = item.mimeType || (item.fileUrl?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+
+    setViewerData({
+      url: item.fileUrl || null,
+      name,
+      mimeType,
+      id: item.id
+    });
+    setViewerOpen(true);
+
+    if (!item.fileUrl && category === 'MATERIALS') {
+      try {
+        const result = await downloadMaterial(item.id);
+        const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
+        const url = window.URL.createObjectURL(blob);
+        setViewerData(prev => ({ ...prev, url, mimeType: result.mimeType }));
+      } catch {
+        toast.error('Failed to load preview');
+        setViewerOpen(false);
+      }
+    }
+  };
+
+  const handleDownload = async (item: DiscoveryResult) => {
+    const toastId = toast.loading('Preparing download...');
+    try {
+      if (item.fileUrl) {
+        window.open(item.fileUrl, '_blank');
+        toast.dismiss(toastId);
+        return;
+      }
+      if (category === 'MATERIALS') {
+        const result = await downloadMaterial(item.id);
+        const blob = new Blob([new Uint8Array(result.content)], { type: result.mimeType });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = item.title || item.subject || 'document';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      }
+      toast.success('Download started!', { id: toastId });
+    } catch {
+      toast.error('Download failed', { id: toastId });
+    }
+  };
 
   return (
     <div className="flex flex-col gap-8">
@@ -68,7 +147,7 @@ export default function DiscoveryPage() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={`Search ${category.toLowerCase().replace('_', ' ')}...`}
-              className="w-full h-14 rounded-2xl bg-card border border-border pl-12 pr-4 text-sm font-medium focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all shadow-lg shadow-black/5"
+              className="w-full h-14 rounded-2xl bg-card border border-border pl-12 pr-4 text-sm font-medium focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all shadow-lg shadow-black/5 text-foreground"
             />
           </div>
           
@@ -89,9 +168,8 @@ export default function DiscoveryPage() {
               key={cat.value}
               onClick={() => {
                 setCategory(cat.value);
-                // setShowFilters(false);
               }}
-              className={`flex-1 min-w-[150px] flex items-center justify-center gap-3 py-4 rounded-2xl font-bold text-sm transition-all ${category === cat.value ? 'bg-primary text-white shadow-xl shadow-primary/20 scale-[1.02]' : 'bg-transparent text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+              className={`flex-1 min-w-[150px] flex items-center justify-center gap-3 py-4 rounded-2xl font-bold text-sm transition-all ${category === cat.value ? 'bg-primary text-white shadow-xl shadow-primary/20 scale-[1.02]' : 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground'}`}
             >
               <cat.icon className="h-5 w-5" />
               {cat.label}
@@ -117,13 +195,13 @@ export default function DiscoveryPage() {
         </div>
       ) : category === 'ACCOUNTS' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {results.map((user) => (
-            <div key={user.id} className="glass group rounded-[2.5rem] overflow-hidden flex flex-col transition-all hover:scale-[1.03] hover:shadow-2xl border border-border bg-card relative">
+          {results.map((targetUser) => (
+            <div key={targetUser.id} className="glass group rounded-[2.5rem] overflow-hidden flex flex-col transition-all hover:scale-[1.03] hover:shadow-2xl border border-border bg-card relative">
               <div className="p-8 pb-6 flex flex-col items-center text-center">
                 <div className="relative mb-6">
                   <div className="h-24 w-24 rounded-full border-4 border-background overflow-hidden relative z-10 shadow-xl group-hover:border-primary/50 transition-colors">
-                    {user.avatarUrl ? (
-                      <img src={user.avatarUrl} alt={user.name} className="h-full w-full object-cover" />
+                    {targetUser.avatarUrl ? (
+                      <img src={targetUser.avatarUrl} alt={targetUser.name || 'User'} className="h-full w-full object-cover" />
                     ) : (
                       <div className="h-full w-full bg-secondary flex items-center justify-center">
                         <UserIcon className="h-10 w-10 text-muted-foreground" />
@@ -132,24 +210,24 @@ export default function DiscoveryPage() {
                   </div>
                 </div>
 
-                <h3 className="text-xl font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-1">{user.name || 'Anonymous User'}</h3>
+                <h3 className="text-xl font-bold text-foreground mb-1 group-hover:text-primary transition-colors line-clamp-1">{targetUser.name || 'Anonymous User'}</h3>
                 <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-6">College Student</p>
 
                 <div className="w-full space-y-4 pt-6 border-t border-border">
                   <div className="flex items-center gap-3 text-left">
                     <MapPin className="h-4 w-4 text-primary shrink-0" />
-                    <p className="text-xs font-semibold text-foreground line-clamp-1">{user.college || 'Universal Campus'}</p>
+                    <p className="text-xs font-semibold text-foreground line-clamp-1">{targetUser.college || 'Universal Campus'}</p>
                   </div>
                   <div className="flex items-center gap-3 text-left">
                     <Mail className="h-4 w-4 text-primary shrink-0" />
-                    <p className="text-xs font-semibold text-foreground line-clamp-1 truncate">{user.email}</p>
+                    <p className="text-xs font-semibold text-foreground line-clamp-1 truncate">{targetUser.email}</p>
                   </div>
                 </div>
               </div>
               
               <div className="p-4 bg-secondary/30 mt-auto border-t border-border">
                 <Link 
-                  href={`/dashboard/profile/${user.id}`}
+                  href={`/dashboard/profile/${targetUser.id}`}
                   className="w-full h-12 rounded-xl bg-primary text-white text-xs font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-all shadow-lg shadow-primary/10"
                 >
                   View Profile & Contributions
@@ -164,10 +242,10 @@ export default function DiscoveryPage() {
              <div key={item.id} className="glass group rounded-[2rem] p-6 border border-border hover:border-primary/30 transition-all bg-card/50 flex flex-col gap-4">
                 <div className="flex justify-between items-start">
                    <div className="p-3 rounded-2xl bg-primary/10 text-primary border border-primary/20">
-                      {category === 'MATERIALS' ? <BookOpen /> : category === 'RESEARCH_PAPERS' ? <FileText /> : <Award />}
+                      {category === 'MATERIALS' ? <BookOpen className="h-5 w-5" /> : category === 'RESEARCH_PAPERS' ? <FileText className="h-5 w-5" /> : <Award className="h-5 w-5" />}
                    </div>
                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-2 py-1 bg-muted rounded">
-                      {item.year || item.subjectCode}
+                      {item.year || item.subjectCode || item.publicationYear || 'ARCHIVE'}
                    </span>
                 </div>
                 <div>
@@ -177,13 +255,35 @@ export default function DiscoveryPage() {
                    </p>
                 </div>
                 <div className="pt-4 mt-auto border-t border-border/50 flex items-center justify-between">
-                   <span className="text-[10px] font-bold text-muted-foreground uppercase">{new Date(item.createdAt).toLocaleDateString()}</span>
-                   <button className="text-xs font-bold text-primary hover:underline transition-all">View Details</button>
+                   <span className="text-[10px] font-bold text-muted-foreground uppercase">{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Recent'}</span>
+                   <div className="flex items-center gap-2">
+                     <button onClick={() => handleOpenViewer(item)} className="p-2 rounded-lg bg-secondary hover:bg-muted text-foreground transition-colors" title="Quick Preview">
+                        <Eye className="h-3.5 w-3.5" />
+                     </button>
+                     <button onClick={() => handleDownload(item)} className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                        <Download className="h-3.5 w-3.5" /> Download
+                     </button>
+                   </div>
                 </div>
              </div>
           ))}
         </div>
       )}
+
+      <FileViewerModal
+        isOpen={viewerOpen}
+        onClose={() => {
+          if (viewerData.url?.startsWith('blob:')) window.URL.revokeObjectURL(viewerData.url);
+          setViewerOpen(false);
+        }}
+        fileUrl={viewerData.url}
+        fileName={viewerData.name}
+        mimeType={viewerData.mimeType}
+        onDownload={() => {
+          if (viewerData.url) window.open(viewerData.url, '_blank');
+        }}
+      />
     </div>
   );
 }
+

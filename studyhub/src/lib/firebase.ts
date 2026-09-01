@@ -4,13 +4,13 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCLucLOt-pqtZfd1PzvMm3TlqDkgVCFR-w",
-  authDomain: "studyhuby-e8fad.firebaseapp.com",
-  projectId: "studyhuby-e8fad",
-  storageBucket: "studyhuby-e8fad.firebasestorage.app",
-  messagingSenderId: "280506383668",
-  appId: "1:280506383668:web:cb8b31041ad1ea65cd3961",
-  measurementId: "G-PWX81GDJJL"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyCLucLOt-pqtZfd1PzvMm3TlqDkgVCFR-w",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "studyhuby-e8fad.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "studyhuby-e8fad",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "studyhuby-e8fad.firebasestorage.app",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "280506383668",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:280506383668:web:cb8b31041ad1ea65cd3961",
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-PWX81GDJJL"
 };
 
 // Initialize Firebase only if not already initialized
