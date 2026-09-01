@@ -153,7 +153,7 @@ body {
 
 /* View Transitions */
 ::view-transition-group(root) {
-  animation-duration: 0.7s;
+  animation-duration: 0.45s;
   animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -170,14 +170,6 @@ body {
 
 ::view-transition-new(root) {
   z-index: 9999;
-}
-
-.dark::view-transition-old(root) {
-  z-index: 9999;
-}
-
-.dark::view-transition-new(root) {
-  z-index: 1;
 }
 
 /* Disable global transitions during view transition to prevent interference */

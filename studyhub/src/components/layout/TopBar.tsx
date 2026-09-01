@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Search, Bell, User, ChevronDown, LogIn, LogOut, Settings, Menu, ChevronLeft, Check, Filter, BookOpen, Code2 } from 'lucide-react';
+import { Search, Bell, User, ChevronDown, LogIn, LogOut, Settings, Menu, ChevronLeft, Check, Filter, BookOpen, Code2, Sun, Moon } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useSidebar } from '@/context/SidebarContext';
 import { db } from '@/lib/firebase';
@@ -9,6 +9,7 @@ import { collection, query, where, updateDoc, doc, limit } from 'firebase/firest
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { FileText, Award, GraduationCap as QAIcon, User as UserIcon } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useTheme } from 'next-themes';
 import Link from 'next/link';
 
 export type SearchCategory = 'MATERIALS' | 'QUESTION_PAPERS' | 'MODEL_PAPERS' | 'RESEARCH_PAPERS' | 'ACCOUNTS';
@@ -33,10 +34,14 @@ const CATEGORIES: { label: string; value: SearchCategory; icon: React.ComponentT
 export default function TopBar() {
   const { user, profile, loginWithGoogle, logout, loading } = useAuth();
   const { isCollapsed, toggleSidebar } = useSidebar();
+  const { theme, setTheme } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -50,6 +55,55 @@ export default function TopBar() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
+
+  const handleToggleTheme = (e: React.MouseEvent) => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    const docWithTransition = document as Document & {
+      startViewTransition?: (callback: () => Promise<void> | void) => {
+        ready: Promise<void>;
+        finished: Promise<void>;
+      };
+    };
+
+    if (!docWithTransition.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setTheme(newTheme);
+      return;
+    }
+
+    const x = e.clientX || window.innerWidth / 2;
+    const y = e.clientY || window.innerHeight / 2;
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y)
+    );
+
+    document.documentElement.classList.add('view-transitioning');
+
+    const transition = docWithTransition.startViewTransition(async () => {
+      setTheme(newTheme);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    });
+
+    transition.ready.then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${endRadius}px at ${x}px ${y}px)`,
+          ],
+        },
+        {
+          duration: 450,
+          easing: "ease-in-out",
+          pseudoElement: "::view-transition-new(root)",
+        }
+      );
+    });
+
+    transition.finished.finally(() => {
+      document.documentElement.classList.remove('view-transitioning');
+    });
+  };
 
   // Sync state when on /dashboard and search params change
   useEffect(() => {
@@ -207,6 +261,16 @@ export default function TopBar() {
           <Code2 className="h-4 w-4" />
           Contribute
         </a>
+        {mounted && (
+          <button 
+            onClick={handleToggleTheme}
+            className="rounded-xl p-2.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground cursor-pointer"
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+          >
+            {theme === 'dark' ? <Sun className="h-5 w-5 text-amber-400" /> : <Moon className="h-5 w-5 text-slate-700" />}
+          </button>
+        )}
+
         <div className="relative" ref={notifRef}>
           <button 
             onClick={() => {
